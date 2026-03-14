@@ -88,6 +88,9 @@ export class TCPServer {
       console.log(`[tcp] ${addr}: handshake ok — tree ${conn.key}, dims=${dims}, ` +
         `zlib=${conn.zlibEnabled}, pause=${conn.pauseMode}, cellData=${conn.hasCellData}`);
 
+      // Register tree so store knows the expected tree count before any STEP_BEGIN.
+      this.store.registerTree(conn.key);
+
       // Send ACK.
       socket.write(Buffer.from([ACK_BYTE]));
 

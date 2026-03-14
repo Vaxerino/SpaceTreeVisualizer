@@ -50,6 +50,19 @@ picker.onPick(id => {
 
 // --- Current snapshot ---
 let currentSnapshot: StepSnapshot | null = null;
+let cameraOriented = false;
+
+/** Auto-orient camera once based on 2D vs 3D cell data. */
+function orientCameraIfNeeded(snap: StepSnapshot): void {
+  if (cameraOriented || snap.cells.length === 0) return;
+  const is2D = snap.cells.every(c => Math.abs(c.hz) < 0.0001);
+  if (is2D) {
+    sceneManager.orientFor2D();
+  } else {
+    sceneManager.orientFor3D();
+  }
+  cameraOriented = true;
+}
 
 function reapplyFilter(): void {
   if (!currentSnapshot) return;
@@ -67,6 +80,7 @@ async function loadAndDisplay(stepIndex: number): Promise<void> {
   const snap = await SnapshotCache.get(stepIndex);
   if (!snap) return;
   currentSnapshot = snap;
+  orientCameraIfNeeded(snap);
   cellRenderer.updateFromSnapshot(snap.cells, AppState.filter, AppState.colorMode, AppState.simFieldIndex);
   status.setLive(snap.stepIndex, snap.cellCount);
   timeline.setInfo(`LIVE  step ${snap.stepIndex}  ${snap.cellCount} cells`);

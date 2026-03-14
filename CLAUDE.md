@@ -66,6 +66,10 @@ project.add_action_set_to_timestepping(
 **Ports:** TCP 7421 (C++ senders), HTTP+WS 7422 (browser)
 **Test sender:** `python3 backend/test_sender.py` (requires backend running)
 
+**Restart required between simulation runs** — `SpaceTreeStore.committedSteps` persists in memory; rerunning the simulation without restarting the backend silently discards all data (step indices already committed).
+
+**Commit timing** — `SpaceTreeStore` uses a 30ms grace-period timer after all-started trees send STEP_END. This is intentional: OpenMP trees connect lazily and the fastest tree can finish step 0 before others open TCP. Do not remove the timer.
+
 Key files:
 - `backend/src/frameTypes.ts` — protocol constants; must stay in sync with C++ templates
 - `backend/src/SpaceTreeStore.ts` — step ring buffer (200 steps), commit logic
@@ -80,9 +84,15 @@ Key files:
 **Type-check:** `cd frontend && npx tsc --noEmit`
 
 Key files:
-- `frontend/src/scene/CellRenderer.ts` — InstancedMesh, max 2M cells, 5% gap
+- `frontend/src/scene/CellRenderer.ts` — InstancedMesh, max 500K cells, 5% gap
 - `frontend/src/scene/ColorMapper.ts` — Turbo (level), coolwarm (sim data), flag colors
 - `frontend/src/ui/DetailPanel.ts` — decoded CellMarker struct view
+
+### Three.js / WebGL gotchas
+- **`mesh.frustumCulled = false`** on every `InstancedMesh` — base geometry sphere (origin, r=0.866) falls outside top-down 2D cameras; ALL instances silently skipped. Diagnose: `renderer.info.render.triangles === 0` after render.
+- **CSS Grid canvas inflation** — `renderer.setSize(w, h, false)` sets `canvas.height` HTML attribute, inflating `1fr` grid rows. Require `min-height: 0; min-width: 0` on `#canvas`.
+- **SwiftShader (Playwright/headless)** — silently fails GPU buffer allocations ≥2M instances (~152MB). Keep `MAX_INSTANCES ≤ 500K`.
+- **2D camera** — `orientFor2D()` positions at z=1.2 (fills ~72% viewport); `controls.minDistance = 0.05` prevents camera passing through z=0 cell plane.
 
 ---
 
@@ -114,15 +124,20 @@ Key files:
 
 ---
 
+## Integration Tests
+
+**Location:** `tests/exahype2-fv-euler/`
+**Build:** `bash -l -c "module load mpi && PEANO_CMAKE_BUILD_DIR=/mnt/Megafast/Peano/build python3 point-explosion.py -d 2 -m Release -md 4"`
+- Requires login shell (`bash -l`) for MPI module — plain `bash -c` misses MPI in PATH
+- `point-explosion.py` runs `make distclean`, deleting the `ExaHyPE` binary. Never rely on a previously built binary after running this script.
+
+**Run:** `cd tests/exahype2-fv-euler && bash -l -c "module load mpi 2>/dev/null; ./ExaHyPE"`
+
+---
+
 ## Current Phase
 
-**Phase 1 complete:** backend TCP+WS+REST, frontend scene + UI, `test_sender.py`
-
-**Next: Peano plugin** (`spacetree_visualizer/`)
-- `SpaceTreeVisualizerActionSet.py` — ActionSet subclass, cell-only first
-- `_templates/STVConnection.{h,cpp}.jinja2`
-- `_templates/SpaceTreeVisualizerSender.{h,cpp}.jinja2`
-- Test: integrate into an ExaHype2 application in `/mnt/Megafast/Peano/applications/`
+**Phase 1 + integration tests complete:** backend TCP+WS+REST, frontend scene + UI, `test_sender.py`, and `tests/exahype2-fv-euler/` integration test suite.
 
 **Phase 1.5:** simulation data streaming (`send_cell_data=True`, raw patch doubles)
 

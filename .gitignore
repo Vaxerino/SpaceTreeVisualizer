@@ -5,6 +5,7 @@
 .sidecar-pr
 .sidecar-start.sh
 .sidecar-base
+.playwright-mcp/
 .td-root
 *.pyc
 __pycache__

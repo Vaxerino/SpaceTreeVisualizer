@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import type { CellRecord, FilterSpec, ColorMode } from '../types';
 import { ColorMapper } from './ColorMapper';
 
-const MAX_INSTANCES = 2_000_000;
+// Pre-allocated instance count. 500K × ~76 bytes ≈ 38 MB GPU — fits comfortably
+// on any modern GPU. Do NOT raise to 2M+: large allocations silently fail in
+// some WebGL implementations (SwiftShader, some mobile drivers).
+const MAX_INSTANCES = 500_000;
 const CELL_GAP = 0.95; // scale factor to leave a small visible gap
 
 /**
@@ -23,6 +26,10 @@ export class CellRenderer {
     this.mesh = new THREE.InstancedMesh(geo, mat, MAX_INSTANCES);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.count = 0;
+    // Disable frustum culling: the base geometry's bounding sphere is a unit cube
+    // at the origin, which may lie outside the camera frustum for a 2D top-down
+    // camera.  All instances are within [0,1]³ so culling has no benefit here.
+    this.mesh.frustumCulled = false;
     scene.add(this.mesh);
   }
 

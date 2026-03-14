@@ -14,8 +14,22 @@ export class SpaceTreeStore {
   private snapshots: StepSnapshot[] = [];
   private maxSnapshots: number;
 
-  /** Registered tree keys (set on first STEP_BEGIN). */
+  /** Tree keys registered at TCP handshake time. */
   private registeredTrees: Set<string> = new Set();
+  /** Step indices that have already been committed (prevents duplicate commits). */
+  private committedSteps: Set<number> = new Set();
+
+  /**
+   * Pending commit timers, keyed by step index.
+   *
+   * When all trees that have sent STEP_BEGIN(N) have also sent STEP_END(N),
+   * a 30 ms timer is started instead of committing immediately. This grace
+   * period lets late-connecting trees (lazy TCP open in beginTraversal) send
+   * their own STEP_BEGIN(N) before we close the step.  If a new STEP_BEGIN(N)
+   * arrives during the window, the timer is cancelled and rescheduled once
+   * that tree also sends STEP_END(N).
+   */
+  private pendingCommitTimers: Map<number, ReturnType<typeof setTimeout>> = new Map();
 
   /** Per-step accumulator: step_index → {tree_key → cells[]} */
   private pending: Map<number, Map<string, CellRecord[]>> = new Map();
@@ -35,6 +49,11 @@ export class SpaceTreeStore {
     this.maxSnapshots = maxSnapshots;
   }
 
+  /** Register a tree at TCP handshake time (before any STEP_BEGIN). */
+  registerTree(key: string): void {
+    this.registeredTrees.add(key);
+  }
+
   /** Register a listener called whenever a step is committed. */
   onStepCommitted(cb: StepCommittedCallback): void {
     this.onCommitCallbacks.push(cb);
@@ -42,12 +61,22 @@ export class SpaceTreeStore {
 
   onStepBegin(treeKey: string, stepIndex: number, timestamp: number): void {
     this.registeredTrees.add(treeKey);
+    // Ignore STEP_BEGIN for steps we already committed (late-arriving trees in step 0).
+    if (this.committedSteps.has(stepIndex)) return;
     if (!this.pending.has(stepIndex)) {
       this.pending.set(stepIndex, new Map());
       this.pendingTimestamps.set(stepIndex, timestamp);
       this.pendingEnded.set(stepIndex, new Set());
     }
     this.pending.get(stepIndex)!.set(treeKey, []);
+
+    // A new tree is joining step N — cancel any pending commit timer so we
+    // don't commit before this tree has had a chance to send STEP_END.
+    const timer = this.pendingCommitTimers.get(stepIndex);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.pendingCommitTimers.delete(stepIndex);
+    }
   }
 
   addCells(treeKey: string, stepIndex: number, cells: CellRecord[]): void {
@@ -64,11 +93,27 @@ export class SpaceTreeStore {
 
     ended.add(treeKey);
 
-    // Step is complete when every tree that sent STEP_BEGIN has sent STEP_END.
     const beganKeys = [...stepMap.keys()];
-    if (beganKeys.length > 0 && beganKeys.every(k => ended.has(k))) {
-      this.commitStep(stepIndex);
-    }
+    if (beganKeys.length === 0) return;
+
+    // All trees that began this step must have ended before we can commit.
+    if (!beganKeys.every(k => ended.has(k))) return;
+
+    // All currently-started trees have ended.  Schedule a 30 ms grace period
+    // to allow late-connecting trees to send STEP_BEGIN(N) before we commit.
+    // If a new STEP_BEGIN(N) arrives, onStepBegin() cancels this timer.
+    if (this.pendingCommitTimers.has(stepIndex)) return; // already scheduled
+    const timer = setTimeout(() => {
+      this.pendingCommitTimers.delete(stepIndex);
+      // Re-check: all trees that began this step must have ended.
+      const sm = this.pending.get(stepIndex);
+      const en = this.pendingEnded.get(stepIndex);
+      if (!sm || !en) return;
+      if ([...sm.keys()].every(k => en.has(k))) {
+        this.commitStep(stepIndex);
+      }
+    }, 30);
+    this.pendingCommitTimers.set(stepIndex, timer);
   }
 
   onPauseAck(treeKey: string): void {
@@ -89,6 +134,16 @@ export class SpaceTreeStore {
   }
 
   private commitStep(stepIndex: number): void {
+    // Guard: don't double-commit (timer + a direct call could race).
+    if (this.committedSteps.has(stepIndex)) return;
+    this.committedSteps.add(stepIndex);
+
+    // Cancel any pending timer for this step (shouldn't still exist, but be safe).
+    const timer = this.pendingCommitTimers.get(stepIndex);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.pendingCommitTimers.delete(stepIndex);
+    }
     const stepMap = this.pending.get(stepIndex)!;
     const timestamp = this.pendingTimestamps.get(stepIndex) ?? 0;
 

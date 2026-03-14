@@ -45,7 +45,7 @@ cd frontend && npm install
 
 ```bash
 cd tests/exahype2-fv-euler
-python3 point-explosion.py -d 3 -m Release -md 4 -amr 2
+python3 point-explosion.py -d 3 -md 4
 ```
 
 This generates all C++ sources (including `STVConnection.h/cpp`) via Peano's

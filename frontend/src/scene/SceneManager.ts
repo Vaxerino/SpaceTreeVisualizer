@@ -44,6 +44,27 @@ export class SceneManager {
     this.animate();
   }
 
+  /** Position camera for a 3D simulation domain [0,1]^3. */
+  orientFor3D(): void {
+    this.camera.position.set(1.5, 1.5, 2.5);
+    this.camera.up.set(0, 1, 0);
+    this.controls.target.set(0.5, 0.5, 0.5);
+    this.controls.update();
+    this.camera.lookAt(0.5, 0.5, 0.5);
+  }
+
+  /** Position camera for a 2D simulation domain in the XY plane at z=0. */
+  orientFor2D(): void {
+    // z=1.2 fills ~72% of screen height with the [0,1]^2 domain (FOV 60°).
+    // minDistance prevents the camera from passing through the z=0 cell plane.
+    this.camera.position.set(0.5, 0.5, 1.2);
+    this.camera.up.set(0, 1, 0);
+    this.controls.target.set(0.5, 0.5, 0.0);
+    this.controls.minDistance = 0.05;
+    this.controls.update();
+    this.camera.lookAt(0.5, 0.5, 0.0);
+  }
+
   private onResize(canvas: HTMLCanvasElement): void {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
