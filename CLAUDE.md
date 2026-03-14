@@ -32,7 +32,7 @@ Streams the adaptive mesh from a running C++ simulation to a Three.js browser fr
 ```
 
 Three components, three processes:
-- `peano_plugin/` — Python `ActionSet` subclass + Jinja2 C++ templates
+- `spacetree_visualizer/` — Python `ActionSet` subclass + Jinja2 C++ templates
 - `backend/` — Node.js/TypeScript, TCP + WebSocket + REST
 - `frontend/` — Three.js + Vite + TypeScript, three-column layout
 
@@ -118,7 +118,7 @@ Key files:
 
 **Phase 1 complete:** backend TCP+WS+REST, frontend scene + UI, `test_sender.py`
 
-**Next: Peano plugin** (`peano_plugin/`)
+**Next: Peano plugin** (`spacetree_visualizer/`)
 - `SpaceTreeVisualizerActionSet.py` — ActionSet subclass, cell-only first
 - `_templates/STVConnection.{h,cpp}.jinja2`
 - `_templates/SpaceTreeVisualizerSender.{h,cpp}.jinja2`

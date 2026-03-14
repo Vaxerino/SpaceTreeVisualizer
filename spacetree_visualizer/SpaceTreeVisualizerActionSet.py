@@ -5,7 +5,7 @@ ActionSet subclass for Peano4/ExaHype2 that streams the adaptive mesh tree to a
 SpaceTreeVisualizer backend over TCP in real time.
 
 Usage in a simulation script:
-    from peano_plugin import SpaceTreeVisualizerActionSet
+    from spacetree_visualizer import SpaceTreeVisualizerActionSet
     project.add_action_set_to_timestepping(
         SpaceTreeVisualizerActionSet(solver=my_solver, host="127.0.0.1", port=7421)
     )
@@ -13,6 +13,7 @@ Usage in a simulation script:
 
 import os
 import jinja2
+import peano4.output
 from peano4.solversteps.ActionSet import ActionSet
 
 
@@ -166,30 +167,39 @@ class SpaceTreeVisualizerActionSet(ActionSet):
         return "\n"
 
     # ------------------------------------------------------------------
-    # Extra file generation (STVConnection.h/.cpp)
+    # STVConnection file pair for Peano's output pipeline
     # ------------------------------------------------------------------
 
-    def generate_connection_files(self, output_dir: str) -> None:
+    def make_stv_connection_file_pair(self, namespace: list, subdirectory: str = "."):
         """
-        Write STVConnection.h and STVConnection.cpp into output_dir.
+        Return a Jinja2TemplatedHeaderImplementationFilePair for STVConnection.
 
-        Call this before project.generate_Peano4_project() so the generated
-        SpaceTreeVisualizerSender can #include "STVConnection.h".
+        Pass this to peano_project.output.add() so Peano's code-generation
+        pipeline writes STVConnection.h/.cpp and registers them in the
+        Makefile and .gitignore automatically.
 
-        Example::
+        Example (in the simulation script)::
 
             stv = SpaceTreeVisualizerActionSet(solver=my_solver, port=7421)
-            stv.generate_connection_files(".")
             project.add_action_set_to_timestepping(stv)
-            project.generate_Peano4_project(...)
+
+            peano_project = project.generate_Peano4_project()
+
+            conn = stv.make_stv_connection_file_pair(peano_project.namespace)
+            peano_project.output.add(conn)
+            peano_project.output.makefile.add_h_file(
+                subdirectory + "STVConnection.h", generated=True)
+            peano_project.output.makefile.add_cpp_file(
+                subdirectory + "STVConnection.cpp", generated=True)
+
+            peano_project.generate(...)
         """
-        import os
-        for tmpl_name, out_name in [
-            ("STVConnection.h.jinja2",   "STVConnection.h"),
-            ("STVConnection.cpp.jinja2", "STVConnection.cpp"),
-        ]:
-            content = self._render(tmpl_name)
-            out_path = os.path.join(output_dir, out_name)
-            with open(out_path, "w") as f:
-                f.write(content)
-            print(f"SpaceTreeVisualizer: wrote {out_path}")
+        tmpl_dir = self._template_dir()
+        return peano4.output.Jinja2TemplatedHeaderImplementationFilePair(
+            os.path.join(tmpl_dir, "STVConnection.template.h"),
+            os.path.join(tmpl_dir, "STVConnection.template.cpp"),
+            "STVConnection",
+            namespace,
+            subdirectory,
+            dict(self.d),
+        )

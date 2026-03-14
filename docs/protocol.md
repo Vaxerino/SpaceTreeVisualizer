@@ -2,7 +2,7 @@
 
 Version: 1
 Encoding: little-endian throughout (unless noted)
-Source of truth: `backend/src/frameTypes.ts`, `peano_plugin/_templates/STVConnection.cpp.jinja2`
+Source of truth: `backend/src/frameTypes.ts`, `spacetree_visualizer/_templates/STVConnection.cpp.jinja2`
 
 ---
 

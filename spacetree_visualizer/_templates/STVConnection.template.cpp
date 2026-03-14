@@ -149,7 +149,7 @@ void STVConnection::openTreeSocket(int treeId, int mpiRank,
   uint8_t hs[16] = {};
   uint32_t magic   = MAGIC;
   uint8_t  version = VERSION;
-  uint8_t  dims    = static_cast<uint8_t>(Dimensions);
+  uint8_t  dims    = static_cast<uint8_t>(DIMENSIONS);
   uint16_t flags   = 0;
   if (hasCellData) flags |= FLAG_HAS_CELL_DATA;
   if (pauseMode)   flags |= FLAG_PAUSE_MODE;
@@ -240,13 +240,13 @@ void STVConnection::sendCellBatch(int treeId,
 uint16_t STVConnection::cellFlags(
     const peano4::datamanagement::CellMarker& marker) {
   uint16_t f = 0;
-  if (marker.hasBeenRefined())                  f |= 0x0001;
-  if (marker.willBeRefined())                   f |= 0x0002;
-  if (marker.isLocal())                         f |= 0x0004;
-  if (marker.isParentCellLocal())               f |= 0x0008;
-  if (marker.areAllVerticesInsideDomain())       f |= 0x0040;
-  if (marker.willBeEnclave())                   f |= 0x0200;
-  if (marker.hasBeenEnclave())                  f |= 0x0400;
+  if (marker.hasBeenRefined())                                                      f |= 0x0001;
+  if (marker.willBeRefined())                                                        f |= 0x0002;
+  if (marker.isLocal())                                                              f |= 0x0004;
+  if (marker.isParentLocal())                                                        f |= 0x0008;
+  if (marker.flags & peano4::datamanagement::CellMarker::AllVerticesInsideDomain)  f |= 0x0040;
+  if (marker.willBeEnclaveCell())                                                    f |= 0x0200;
+  if (marker.hasBeenEnclaveCell())                                                   f |= 0x0400;
   return f;
 }
 
@@ -256,11 +256,11 @@ void STVConnection::appendCellRecord(
 
   auto& c = marker.getX();   // cell centre: tarch::la::Vector<D,double>
   auto& h = marker.getH();   // cell size:   tarch::la::Vector<D,double>
-  int   lv = marker.getLevel();
+  const int lv = marker.level;
   auto& rp = marker.getRelativePositionWithinFatherCell();
   uint16_t flags = cellFlags(marker);
 
-#if Dimensions == 3
+#if DIMENSIONS == 3
   // 32-byte record
   uint8_t rec[32] = {};
   float cx = static_cast<float>(c[0]);

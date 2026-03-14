@@ -6,3 +6,18 @@
 .sidecar-start.sh
 .sidecar-base
 .td-root
+*.pyc
+__pycache__
+
+Makefile
+
+
+#Agent stuff
+.claude
+.agents
+.agent
+
+#ExaHype2 output
+*.h5
+*.xmf
+

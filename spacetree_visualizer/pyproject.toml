@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "spacetree-visualizer"
@@ -9,8 +9,11 @@ description = "Real-time 3D browser debugger for Peano4/ExaHype2 AMR simulations
 requires-python = ">=3.9"
 dependencies = ["jinja2>=3.0"]
 
-[tool.setuptools.package-dir]
-"peano_plugin" = "."
+[tool.setuptools]
+packages = ["spacetree_visualizer"]
 
-[tool.setuptools.packages]
-find = {}
+[tool.setuptools.package-dir]
+"spacetree_visualizer" = "."
+
+[tool.setuptools.package-data]
+"spacetree_visualizer" = ["_templates/*"]

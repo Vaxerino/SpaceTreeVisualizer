@@ -123,7 +123,7 @@ SpaceTreeVisualizer/
 │   ├── peano4-exahype2-reference.md  ← Peano4/ExaHype2 internals
 │   └── ui-spec.md               ← frontend UI specification
 │
-├── peano_plugin/                ← pip-installable Python package
+├── spacetree_visualizer/                ← pip-installable Python package
 │   ├── __init__.py
 │   ├── SpaceTreeVisualizerActionSet.py   ← ActionSet subclass
 │   ├── _templates/
