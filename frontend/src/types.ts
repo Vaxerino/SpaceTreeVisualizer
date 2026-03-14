@@ -1,0 +1,48 @@
+/** Shared types mirroring the backend types.ts */
+
+export interface CellRecord {
+  cx: number; cy: number; cz: number;
+  hx: number; hy: number; hz: number;
+  level: number;
+  flags: number;
+  relPosX: number; relPosY: number; relPosZ: number;
+  rank: number;
+  treeId: number;
+  simData?: number[];
+}
+
+export interface StepSnapshot {
+  stepIndex: number;
+  timestamp: number;
+  cellCount: number;
+  treeIds: string[];
+  cells: CellRecord[];
+  faces: unknown[];
+  vertices: unknown[];
+}
+
+export interface SnapshotSummary {
+  stepIndex: number;
+  timestamp: number;
+  cellCount: number;
+}
+
+// CellMarker flag bitmasks (mirrored from frameTypes.ts on the backend)
+export const CELL_FLAG_HAS_BEEN_REFINED  = 1 << 0;
+export const CELL_FLAG_WILL_BE_REFINED   = 1 << 1;
+export const CELL_FLAG_IS_LOCAL          = 1 << 2;
+export const CELL_FLAG_IS_PARENT_LOCAL   = 1 << 3;
+export const CELL_FLAG_ALL_VTXS_REFINED  = 1 << 4;
+export const CELL_FLAG_ONE_VTX_HANGING   = 1 << 5;
+export const CELL_FLAG_INSIDE_DOMAIN     = 1 << 6;
+export const CELL_FLAG_WILL_BE_ENCLAVE   = 1 << 9;
+export const CELL_FLAG_HAS_BEEN_ENCLAVE  = 1 << 10;
+
+export type ColorMode = 'level' | 'local' | 'enclave' | 'refinement' | 'sim';
+
+export interface FilterSpec {
+  minLevel: number;
+  maxLevel: number;
+  showLocal: boolean;
+  showRemote: boolean;
+}
