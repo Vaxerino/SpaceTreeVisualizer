@@ -147,8 +147,14 @@ export class ProtocolParser {
         const dataLen = payload.readUInt32LE(offset);
         offset += 4;
         if (offset + dataLen > payload.length) break;
-        const dataBytes = payload.subarray(offset, offset + dataLen);
-        cell.simData = new Float64Array(dataBytes.buffer, dataBytes.byteOffset, dataLen / 8);
+        // Read doubles via Buffer API to avoid Float64Array alignment requirements.
+        // (subarray byteOffset is not guaranteed to be 8-byte aligned)
+        const nDoubles = dataLen / 8;
+        const simData: number[] = new Array(nDoubles);
+        for (let i = 0; i < nDoubles; i++) {
+          simData[i] = payload.readDoubleLE(offset + i * 8);
+        }
+        cell.simData = simData;
         offset += dataLen;
       }
 

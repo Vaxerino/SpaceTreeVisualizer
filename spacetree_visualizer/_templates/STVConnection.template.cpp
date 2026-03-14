@@ -316,13 +316,16 @@ void STVConnection::appendCellRecord(
 {% if STV_SEND_CELL_DATA and STV_CELL_DATA_TYPE %}
 void STVConnection::appendCellData(std::vector<uint8_t>& batch,
                                    const double* data, uint32_t nDoubles) {
-  // data_len (4 bytes) + nDoubles × float64 (8 bytes each)
-  uint32_t byteCount = nDoubles * sizeof(double);
+  // data_len (4 bytes) + nDoubles × float64 (8 bytes each).
+  // data may be nullptr for non-leaf / uninitialized cells — send data_len=0.
+  uint32_t byteCount = (data != nullptr) ? nDoubles * sizeof(double) : 0u;
   uint8_t hdr[4];
   std::memcpy(hdr, &byteCount, 4);
   batch.insert(batch.end(), hdr, hdr + 4);
-  const auto* raw = reinterpret_cast<const uint8_t*>(data);
-  batch.insert(batch.end(), raw, raw + byteCount);
+  if (byteCount > 0) {
+    const auto* raw = reinterpret_cast<const uint8_t*>(data);
+    batch.insert(batch.end(), raw, raw + byteCount);
+  }
 }
 {% endif %}
 

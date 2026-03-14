@@ -136,7 +136,7 @@ project = exahype2.Project(
     directory=".",
     executable="ExaHyPE",
 )
-actionset = SpaceTreeVisualizerActionSet(fv_solver)
+actionset = SpaceTreeVisualizerActionSet(fv_solver, send_cell_data=True)
 project.add_action_set_to_timestepping(actionset)
 project.add_solver(fv_solver)
 

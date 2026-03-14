@@ -64,7 +64,7 @@ project.add_action_set_to_timestepping(
 **Stack:** Node.js 20, TypeScript, `ws`, `express`
 **Entry:** `cd backend && npx ts-node src/server.ts`
 **Ports:** TCP 7421 (C++ senders), HTTP+WS 7422 (browser)
-**Test sender:** `python3 backend/test_sender.py` (requires backend running)
+**Test sender:** `python3 backend/test_sender.py [--cell-data]` (requires backend running; `--cell-data` sends sim data blobs)
 
 **Restart required between simulation runs** — `SpaceTreeStore.committedSteps` persists in memory; rerunning the simulation without restarting the backend silently discards all data (step indices already committed).
 
@@ -100,6 +100,8 @@ Key files:
 
 ### C++ (generated)
 - Use `#ifdef USE_ZLIB` guards around all zlib calls (matches Peano's existing pattern)
+- Peano's dimensions macro is always uppercase: `#if DIMENSIONS == 3` (never `Dimensions`)
+- ExaHyPE2 cell data objects (e.g. `FVSolverQ`) use a `NoData` constructor that sets `_data = nullptr` for non-leaf / load-balanced cells. `touchCellFirstTime` fires for ALL cells — always null-check `.data()` before reading. `appendCellData` sends `data_len=0` as a safe sentinel for null data.
 - POSIX sockets only — no new CMake dependencies
 - `std::call_once` + `std::once_flag` for one-time static initialisation in `prepareTraversal`
 - Per-tree data (batch buffers, socket fd) lives on the instance — no locking needed
@@ -109,6 +111,8 @@ Key files:
 - Strict mode, no `any`
 - `frameTypes.ts` is the single source of truth for protocol constants — do not inline magic numbers elsewhere
 - `SpaceTreeStore` owns all mutable state; `TCPServer`/`WebSocketServer` only call its methods
+- Never use `Float64Array`/TypedArray in types exposed via REST — `res.json()` serializes them as `{"0":1,...}` not `[1,...]`. Use `number[]`.
+- Never construct `Float64Array(buf, byteOffset, n)` from a TCP chunk subarray — byteOffset may not be 8-byte aligned (crash). Read doubles with `payload.readDoubleLE(offset + i*8)` in a loop.
 
 ### TypeScript (frontend)
 - No React. Plain DOM manipulation + Three.js
@@ -139,6 +143,6 @@ Key files:
 
 **Phase 1 + integration tests complete:** backend TCP+WS+REST, frontend scene + UI, `test_sender.py`, and `tests/exahype2-fv-euler/` integration test suite.
 
-**Phase 1.5:** simulation data streaming (`send_cell_data=True`, raw patch doubles)
+**Phase 1.5 complete:** sim data streaming — C++ patch doubles sent (HAS_CELL_DATA), backend parses to `number[]`, frontend field picker wired.
 
 **Phase 2:** timeline/pause, face+vertex rendering, multi-rank TreeSelector

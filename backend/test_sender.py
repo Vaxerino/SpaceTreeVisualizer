@@ -84,18 +84,25 @@ def make_cell_record_3d(cx, cy, cz, hx, hy, hz, level, flags, rx=0, ry=0, rz=0):
     )
 
 
+def make_sim_data_section(values: list) -> bytes:
+    """Pack simulation data section: uint32 byte_count + float64 values."""
+    data_bytes = struct.pack(f'<{len(values)}d', *values)
+    return struct.pack('<I', len(data_bytes)) + data_bytes
+
+
 def make_cell_batch(cells: list) -> bytes:
     payload = b''.join(cells)
     return make_frame(FRAME_CELL_BATCH, payload)
 
 
-def run():
+def run(with_cell_data: bool = False):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((HOST, PORT))
     print(f"Connected to {HOST}:{PORT}")
 
-    # Send handshake
-    hs = make_handshake(rank=0, tree_id=0, dims=DIMS, flags=0)
+    # Send handshake — include HAS_CELL_DATA flag when streaming sim data
+    hs_flags = FLAG_CELL_DATA if with_cell_data else 0
+    hs = make_handshake(rank=0, tree_id=0, dims=DIMS, flags=hs_flags)
     sock.sendall(hs)
     print(f"Sent handshake ({len(hs)} bytes)")
 
@@ -111,14 +118,20 @@ def run():
     sock.sendall(make_step_begin(0, 0.0))
     print("Sent STEP_BEGIN 0")
 
-    # Send a batch of 3 cells
+    def cell(geom, sim_values):
+        """Combine geometry record with optional sim data section."""
+        if with_cell_data:
+            return geom + make_sim_data_section(sim_values)
+        return geom
+
+    # Send a batch of 3 cells — sim data: [rho, rhoU_x, rhoU_y, rhoU_z, rhoE]
     cell_records = [
-        make_cell_record_3d(0.25, 0.25, 0.25,  0.5,0.5,0.5,  1, 0b0000_0100, 0,0,0),  # local
-        make_cell_record_3d(0.75, 0.25, 0.25,  0.5,0.5,0.5,  1, 0b0000_0100, 1,0,0),
-        make_cell_record_3d(0.25, 0.75, 0.25,  0.5,0.5,0.5,  1, 0b0000_0100, 0,1,0),
+        cell(make_cell_record_3d(0.25, 0.25, 0.25, 0.5,0.5,0.5, 1, 0b0000_0100, 0,0,0), [1.0, 0.1, 0.0, 0.0, 2.5]),
+        cell(make_cell_record_3d(0.75, 0.25, 0.25, 0.5,0.5,0.5, 1, 0b0000_0100, 1,0,0), [1.2, 0.2, 0.0, 0.0, 3.0]),
+        cell(make_cell_record_3d(0.25, 0.75, 0.25, 0.5,0.5,0.5, 1, 0b0000_0100, 0,1,0), [0.8, 0.0, 0.3, 0.0, 2.0]),
     ]
     sock.sendall(make_cell_batch(cell_records))
-    print(f"Sent CELL_BATCH with {len(cell_records)} cells")
+    print(f"Sent CELL_BATCH with {len(cell_records)} cells" + (" + sim data" if with_cell_data else ""))
 
     # End step
     sock.sendall(make_step_end(0))
@@ -132,11 +145,15 @@ def run():
     for ix in range(2):
         for iy in range(2):
             for iz in range(2):
-                refined_cells.append(make_cell_record_3d(
-                    0.125 + 0.25*ix, 0.125 + 0.25*iy, 0.125 + 0.25*iz,
-                    0.25, 0.25, 0.25,
-                    2, 0b0000_0100,
-                    ix, iy, iz,
+                rho = 1.0 + 0.1 * (ix + iy + iz)
+                refined_cells.append(cell(
+                    make_cell_record_3d(
+                        0.125 + 0.25*ix, 0.125 + 0.25*iy, 0.125 + 0.25*iz,
+                        0.25, 0.25, 0.25,
+                        2, 0b0000_0100,
+                        ix, iy, iz,
+                    ),
+                    [rho, 0.05*ix, 0.05*iy, 0.05*iz, rho * 2.5],
                 ))
     sock.sendall(make_cell_batch(refined_cells))
     sock.sendall(make_step_end(1))
@@ -148,4 +165,9 @@ def run():
 
 
 if __name__ == '__main__':
-    run()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cell-data', action='store_true',
+                        help='Send sim data section after each cell (sets HAS_CELL_DATA flag)')
+    args = parser.parse_args()
+    run(with_cell_data=args.cell_data)

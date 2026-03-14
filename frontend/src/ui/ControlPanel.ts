@@ -26,6 +26,10 @@ export class ControlPanel {
           <option value="refinement">Will Refine</option>
           <option value="sim">Sim Field</option>
         </select>
+        <div id="simFieldRow" class="range-row" style="display:none;margin-top:4px">
+          <span class="mono">field</span>
+          <input type="number" id="simFieldIndex" min="0" max="99" value="0" class="num-input">
+        </div>
       </div>
 
       <div class="panel-section">
@@ -54,8 +58,18 @@ export class ControlPanel {
       </div>
     `;
 
+    const simFieldRow = this.el.querySelector('#simFieldRow') as HTMLElement;
+    const simFieldInput = this.el.querySelector('#simFieldIndex') as HTMLInputElement;
+
     this.el.querySelector('#colorMode')!.addEventListener('change', e => {
-      AppState.setState({ colorMode: (e.target as HTMLSelectElement).value as ColorMode });
+      const mode = (e.target as HTMLSelectElement).value as ColorMode;
+      AppState.setState({ colorMode: mode });
+      simFieldRow.style.display = mode === 'sim' ? '' : 'none';
+      this.onFilterChange();
+    });
+
+    simFieldInput.addEventListener('change', () => {
+      AppState.setState({ simFieldIndex: parseInt(simFieldInput.value, 10) });
       this.onFilterChange();
     });
 

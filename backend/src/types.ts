@@ -26,7 +26,7 @@ export interface CellRecord {
   rank: number;
   treeId: number;
   // Optional simulation data (raw doubles, length = unknowns * patch_volumes)
-  simData?: Float64Array;
+  simData?: number[];
 }
 
 export interface FaceRecord {

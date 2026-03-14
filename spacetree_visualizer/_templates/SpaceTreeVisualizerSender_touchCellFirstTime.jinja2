@@ -1,18 +1,21 @@
   STVConnection::appendCellRecord(_cellBatch, marker);
 
 {% if STV_SEND_CELL_DATA and STV_CELL_DATA_TYPE %}
-  // Append raw solver patch data (Phase 1.5)
-  constexpr uint32_t nDoubles =
-#if Dimensions == 3
-    {{ STV_PATCH_SIZE }} * {{ STV_PATCH_SIZE }} * {{ STV_PATCH_SIZE }}
+  // Append raw solver patch data (Phase 1.5).
+  // appendCellData sends data_len=0 when ptr is null (non-leaf / NoData cells).
+  {
+    constexpr uint32_t nDoubles =
+#if DIMENSIONS == 3
+      {{ STV_PATCH_SIZE }} * {{ STV_PATCH_SIZE }} * {{ STV_PATCH_SIZE }}
 #else
-    {{ STV_PATCH_SIZE }} * {{ STV_PATCH_SIZE }}
+      {{ STV_PATCH_SIZE }} * {{ STV_PATCH_SIZE }}
 #endif
-    * ({{ STV_N_UNKNOWNS }} + {{ STV_N_AUX }});
-  STVConnection::appendCellData(
-    _cellBatch,
-    fineGridCell{{ STV_CELL_DATA_TYPE }}.data(),
-    nDoubles);
+      * ({{ STV_N_UNKNOWNS }} + {{ STV_N_AUX }});
+    STVConnection::appendCellData(
+      _cellBatch,
+      fineGridCell{{ STV_CELL_DATA_TYPE }}.data(),
+      nDoubles);
+  }
 {% endif %}
 
   // Flush when batch exceeds the compression threshold
