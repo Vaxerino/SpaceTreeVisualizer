@@ -1,0 +1,14 @@
+  _cellBatch.clear();
+
+  // Lazily open socket for this tree (no-op if already connected)
+  int mpiRank = tarch::mpi::Rank::getInstance().getRank();
+  STVConnection::openTreeSocket(
+    _treeNumber, mpiRank,
+    "{{ STV_HOST }}", {{ STV_PORT }},
+    {% if STV_SEND_CELL_DATA %}true{% else %}false{% endif %},
+    {% if STV_PAUSE_MODE %}true{% else %}false{% endif %}
+  );
+
+  int step = _currentStep.load(std::memory_order_relaxed);
+  double timestamp = 0.0;
+  STVConnection::sendStepBegin(_treeNumber, step, timestamp);

@@ -1,0 +1,6 @@
+  // Advance the step counter once per rank (called after all trees finish)
+  _currentStep.fetch_add(1, std::memory_order_relaxed);
+{% if STV_PAUSE_MODE %}
+  // Block until the browser sends a CONTINUE signal (pause-mode timeline).
+  STVConnection::sendPauseAckAndWait();
+{% endif %}

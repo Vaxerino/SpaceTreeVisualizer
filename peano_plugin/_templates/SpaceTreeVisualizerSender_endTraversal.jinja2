@@ -1,0 +1,8 @@
+  // Flush remaining cells
+  if (!_cellBatch.empty()) {
+    STVConnection::sendCellBatch(_treeNumber, _cellBatch);
+    _cellBatch.clear();
+  }
+
+  int step = _currentStep.load(std::memory_order_relaxed);
+  STVConnection::sendStepEnd(_treeNumber, step);
