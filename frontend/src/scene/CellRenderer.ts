@@ -26,6 +26,13 @@ export class CellRenderer {
 
   constructor(scene: THREE.Scene) {
     const geo = new THREE.BoxGeometry(1, 1, 1);
+    // Three.js r183 color_vertex.glsl multiplies vColor.rgb by the geometry's
+    // 'color' attribute when USE_COLOR (vertexColors:true) is active, THEN by
+    // instanceColor.  BoxGeometry has no 'color' attribute, so WebGL supplies
+    // (0,0,0), which zeros out every instance color.  Providing a white 'color'
+    // attribute makes that multiplication a no-op and lets instanceColor through.
+    const vertCount = geo.attributes['position'].count;
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertCount * 3).fill(1), 3));
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.mesh = new THREE.InstancedMesh(geo, mat, MAX_INSTANCES);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
