@@ -41,7 +41,7 @@ export class ControlPanel {
 
         <div id="simFieldRow" class="range-row" style="display:none;margin-top:4px">
           <span class="mono">field</span>
-          <input type="number" id="simFieldIndex" min="0" max="99" value="0" class="num-input">
+          <input type="number" id="simFieldIndex" min="0" max="99" value="${AppState.simFieldIndex}" class="num-input">
         </div>
       </div>
 
@@ -59,10 +59,10 @@ export class ControlPanel {
       <div class="panel-section">
         <label class="label">VISIBILITY</label>
         <label class="checkbox-row">
-          <input type="checkbox" id="showLocal" checked> local cells
+          <input type="checkbox" id="showLocal" ${AppState.filter.showLocal ? 'checked' : ''}> local cells
         </label>
         <label class="checkbox-row">
-          <input type="checkbox" id="showRemote" checked> remote cells
+          <input type="checkbox" id="showRemote" ${AppState.filter.showRemote ? 'checked' : ''}> remote cells
         </label>
       </div>
 
