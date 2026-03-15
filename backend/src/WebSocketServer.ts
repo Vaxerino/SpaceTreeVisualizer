@@ -114,10 +114,23 @@ export class WebSocketServer {
         this.trySendLiveSnapshot(ws, state);
         break;
 
-      case 'snapshot_consumed':
+      case 'snapshot_consumed': {
+        // Validate that the ack is for the snapshot we actually sent.
+        // If stepIndex doesn't match lastSentStepIndex this is a stale ack
+        // (e.g. from a previous in-flight snapshot that arrived out of order).
+        // Clearing snapshotInFlight on a stale ack would incorrectly unblock
+        // the send pipeline for a snapshot the client has not yet consumed.
+        const stepIndex = msg.stepIndex;
+        if (typeof stepIndex !== 'number' || stepIndex !== state.lastSentStepIndex) {
+          console.warn(
+            `[ws] snapshot_consumed stepIndex=${String(stepIndex)} does not match lastSentStepIndex=${state.lastSentStepIndex} — ignoring stale ack`,
+          );
+          break;
+        }
         state.snapshotInFlight = false;
         this.trySendLiveSnapshot(ws, state);
         break;
+      }
 
       case 'continue':
         this.store.sendContinueToAllPaused();

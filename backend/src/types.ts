@@ -71,6 +71,8 @@ export interface StepSnapshot {
   treeIds: string[];    // which trees contributed
   cellCount: number;
   simFieldIndex?: number;
+  /** True if at least one cell in this snapshot carries simData. Set at commit time; cleared by pruneHistoricalSimData when sim data is dropped. */
+  hasSimData?: boolean;
 }
 
 /** Summary entry used in snapshot list responses. */

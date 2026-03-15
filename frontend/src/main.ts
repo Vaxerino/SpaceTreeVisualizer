@@ -56,6 +56,7 @@ picker.onPick(id => {
 // --- Current snapshot ---
 let currentSnapshot: StepSnapshot | null = null;
 let cameraOriented = false;
+let displayInProgress = false;
 
 /** Fetch /api/meta and update AppState + ControlPanel. No-op if backend has no meta yet. */
 async function fetchAndApplyMeta(): Promise<void> {
@@ -159,30 +160,41 @@ function syncLiveViewState(): void {
 }
 
 async function displaySnapshot(snap: StepSnapshot): Promise<void> {
+  // Re-entrancy guard: if a previous displaySnapshot call is still awaiting
+  // fetchAndApplyMeta(), do NOT send snapshot_consumed — the backend's
+  // snapshotInFlight flag must stay set until the current render finishes.
+  if (displayInProgress) return;
   if (!snapshotMatchesCurrentView(snap)) {
+    // Send snapshot_consumed even on mismatch so the backend clears its
+    // snapshotInFlight flag and can push the correct snapshot for the current view.
     ws.send({ type: 'snapshot_consumed', stepIndex: snap.stepIndex });
     syncLiveViewState();
     return;
   }
-  currentSnapshot = snap;
-  orientCameraIfNeeded(snap);
-  if (AppState.simMeta === null) {
-    await fetchAndApplyMeta();
+  try {
+    displayInProgress = true;
+    currentSnapshot = snap;
+    orientCameraIfNeeded(snap);
+    if (AppState.simMeta === null) {
+      await fetchAndApplyMeta();
+    }
+    const cells = snap.cells;
+    cellRenderer.updateFromSnapshot(
+      cells,
+      AppState.filter,
+      AppState.colorMode,
+      AppState.colormap,
+      AppState.simFieldIndex,
+      getMaxLevel(cells),
+      AppState.simMeta,
+    );
+    updateColorbar(cells, AppState.colorMode);
+    status.setLive(snap.stepIndex, snap.cellCount);
+    timeline.setInfo(`LIVE  step ${snap.stepIndex}  ${snap.cellCount} cells`);
+    ws.send({ type: 'snapshot_consumed', stepIndex: snap.stepIndex });
+  } finally {
+    displayInProgress = false;
   }
-  const cells = snap.cells;
-  cellRenderer.updateFromSnapshot(
-    cells,
-    AppState.filter,
-    AppState.colorMode,
-    AppState.colormap,
-    AppState.simFieldIndex,
-    getMaxLevel(cells),
-    AppState.simMeta,
-  );
-  updateColorbar(cells, AppState.colorMode);
-  status.setLive(snap.stepIndex, snap.cellCount);
-  timeline.setInfo(`LIVE  step ${snap.stepIndex}  ${snap.cellCount} cells`);
-  ws.send({ type: 'snapshot_consumed', stepIndex: snap.stepIndex });
 }
 
 // --- WebSocket ---

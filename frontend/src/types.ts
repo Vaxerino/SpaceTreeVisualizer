@@ -25,6 +25,8 @@ export interface StepSnapshot {
   timestamp: number;
   cellCount: number;
   treeIds: string[];
+  // null (not undefined) when absent: normalizeSnapshot() in WebSocketClient.ts uses null
+  // as the sentinel from JSON deserialization (`typeof msg['simFieldIndex'] === 'number' ? ... : null`).
   simFieldIndex?: number | null;
   cells: CellRecord[];
   faces: unknown[];

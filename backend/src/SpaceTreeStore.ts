@@ -64,6 +64,11 @@ export class SpaceTreeStore {
   /** Register a tree at TCP handshake time (before any STEP_BEGIN). */
   registerTree(key: string): void {
     this.registeredTrees.add(key);
+    // NOTE: if a new-run tree connects before resetForNewRun fires (a race window
+    // exists when continueSenders is non-empty between the old run ending and the
+    // new run detection), it will be added to expectedTrees and may block commits
+    // indefinitely. TCPServer's continueSenders.size===0 guard is the primary
+    // defense against this; the reset path clears expectedTrees on new-run detection.
     if (this.expectedTrees !== null) {
       this.expectedTrees.add(key);
     }
@@ -282,6 +287,8 @@ export class SpaceTreeStore {
       vertices: [],
       treeIds: [...stepMap.keys()],
       cellCount: allCells.length,
+      // Check once at commit time rather than on every prune cycle (O(1) amortised).
+      hasSimData: allCells.length > 0 && allCells[0]!.simData !== undefined,
     };
 
     this.snapshots.push(snapshot);
@@ -334,8 +341,7 @@ export class SpaceTreeStore {
     let snapshotsWithSim = 0;
     for (let i = this.snapshots.length - 1; i >= 0; i--) {
       const snapshot = this.snapshots[i]!;
-      const hasSimData = snapshot.cells.some(cell => cell.simData !== undefined);
-      if (!hasSimData) continue;
+      if (!snapshot.hasSimData) continue;
 
       snapshotsWithSim++;
       if (snapshotsWithSim <= this.maxSimSnapshots) continue;
@@ -347,6 +353,7 @@ export class SpaceTreeStore {
         }
       }
       delete snapshot.simFieldIndex;
+      snapshot.hasSimData = false;
     }
   }
 

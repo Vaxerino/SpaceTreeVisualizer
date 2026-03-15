@@ -16,7 +16,7 @@ export class ColorMapper {
    * @param colormap  Which LUT to use for continuous modes (ignored for treeId).
    * @param simMin    Min value for sim normalization.
    * @param simMax    Max value for sim normalization.
-   * @param simFieldIndex  Retained for API stability; simData already holds the selected field.
+   * @param _simFieldIndex  Retained for API stability; simData already holds the selected field.
    * @param maxLevel  Max AMR level in current snapshot (for level mode normalization).
    */
   forCell(
@@ -25,7 +25,7 @@ export class ColorMapper {
     colormap: ColormapName,
     simMin: number,
     simMax: number,
-    simFieldIndex: number,
+    _simFieldIndex: number,
     maxLevel: number,
   ): THREE.Color {
     let hex: number;
@@ -58,7 +58,6 @@ export class ColorMapper {
       }
 
       case 'sim': {
-        void simFieldIndex;
         const val = ColorMapper.meanSimValue(cell);
         const t = simMax !== simMin ? (val - simMin) / (simMax - simMin) : 0.5;
         hex = sample(colormap, t);
@@ -84,11 +83,9 @@ export class ColorMapper {
   /**
    * Compute min/max across the selected field payload for all cells.
    */
-  static simRange(cells: CellRecord[], fieldIndex: number, simMeta: SimMeta | null): [number, number] {
+  static simRange(cells: CellRecord[], _fieldIndex: number, _simMeta: SimMeta | null): [number, number] {
     let min = Infinity, max = -Infinity;
 
-    void fieldIndex;
-    void simMeta;
     for (const c of cells) {
       if (!c.simData) continue;
       for (const v of c.simData) {
