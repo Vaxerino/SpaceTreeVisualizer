@@ -142,21 +142,24 @@ export class TimelineBar {
     // LIVE button
     this.liveBtn.classList.toggle('live-active', state.viewMode === 'live');
 
-    // Sim group
-    this.simGroup.style.display = state.hasPauseMode ? 'flex' : 'none';
-    if (state.hasPauseMode) {
-      if (state.autoAdvanceSim) {
-        this.simControlBtn.textContent = '⏸ Pause Sim';
-        this.simControlBtn.dataset['action'] = 'pause';
-        this.simControlBtn.style.display = 'inline-block';
-      } else if (state.isPaused) {
-        this.simControlBtn.textContent = '▶ Resume Sim';
-        this.simControlBtn.dataset['action'] = 'resume';
-        this.simControlBtn.style.display = 'inline-block';
-      } else {
-        // Transient: CONTINUE was sent, waiting for next PAUSE_ACK
-        this.simControlBtn.style.display = 'none';
-      }
+    // Sim group — always visible; button disabled when no PAUSE_MODE sim connected
+    this.simGroup.style.display = 'flex';
+    this.simControlBtn.disabled = !state.hasPauseMode;
+    if (!state.hasPauseMode) {
+      this.simControlBtn.textContent = '⏸ Pause Sim';
+      this.simControlBtn.dataset['action'] = 'pause';
+      this.simControlBtn.style.display = 'inline-block';
+    } else if (state.autoAdvanceSim) {
+      this.simControlBtn.textContent = '⏸ Pause Sim';
+      this.simControlBtn.dataset['action'] = 'pause';
+      this.simControlBtn.style.display = 'inline-block';
+    } else if (state.isPaused) {
+      this.simControlBtn.textContent = '▶ Resume Sim';
+      this.simControlBtn.dataset['action'] = 'resume';
+      this.simControlBtn.style.display = 'inline-block';
+    } else {
+      // Transient: CONTINUE was sent, waiting for next PAUSE_ACK
+      this.simControlBtn.style.display = 'none';
     }
   }
 

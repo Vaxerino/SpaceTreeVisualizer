@@ -128,6 +128,9 @@ function buildTimelineState(): TimelineBarState {
 
 function snapshotMatchesCurrentView(snap: StepSnapshot): boolean {
   if (AppState.colorMode !== 'sim') return true;
+  // null means a REST snapshot with interleaved full-field data —
+  // extractSimFieldIfNeeded() handles field selection, so any field is compatible.
+  if (snap.simFieldIndex == null) return true;
   return snap.simFieldIndex === AppState.simFieldIndex;
 }
 
