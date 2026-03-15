@@ -12,6 +12,17 @@ export interface TreeConnection {
   hasCellData: boolean;
   hasFaceData: boolean;
   key: string;          // "rank:treeId"
+  patchSize: number;    // PATCH_SIZE^DIMS subcells per AMR cell
+  nUnknowns: number;    // number of PDE unknowns per subcell
+  nAux: number;         // number of auxiliary variables per subcell
+}
+
+/** Simulation patch metadata, shared across all trees in a run. */
+export interface SimMeta {
+  patchSize: number;
+  nUnknowns: number;
+  nAux: number;
+  unknownNames: string[] | null;
 }
 
 /** Geometry + metadata for one cell, as parsed from a CellRecord. */

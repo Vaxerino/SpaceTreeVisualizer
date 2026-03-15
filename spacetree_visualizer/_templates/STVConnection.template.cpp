@@ -145,26 +145,33 @@ void STVConnection::openTreeSocket(int treeId, int mpiRank,
   }
   ::freeaddrinfo(res);
 
-  // Handshake: 16-byte request
-  uint8_t hs[16] = {};
-  uint32_t magic   = MAGIC;
-  uint8_t  version = VERSION;
-  uint8_t  dims    = static_cast<uint8_t>(DIMENSIONS);
-  uint16_t flags   = 0;
+  // Handshake: 20-byte request (VERSION=0x02)
+  uint8_t hs[20] = {};
+  uint32_t magic    = MAGIC;
+  uint8_t  version  = VERSION;
+  uint8_t  dims     = static_cast<uint8_t>(DIMENSIONS);
+  uint16_t flags    = 0;
   if (hasCellData) flags |= FLAG_HAS_CELL_DATA;
   if (pauseMode)   flags |= FLAG_PAUSE_MODE;
 #ifdef USE_ZLIB
   flags |= FLAG_ZLIB;
 #endif
-  int32_t rank   = static_cast<int32_t>(mpiRank);
-  int32_t treeId32 = static_cast<int32_t>(treeId);
+  int32_t rank      = static_cast<int32_t>(mpiRank);
+  int32_t treeId32  = static_cast<int32_t>(treeId);
+  uint8_t patchSize = static_cast<uint8_t>({{ STV_PATCH_SIZE }});
+  uint8_t nUnknowns = static_cast<uint8_t>({{ STV_N_UNKNOWNS }});
+  uint8_t nAux      = static_cast<uint8_t>({{ STV_N_AUX }});
 
-  std::memcpy(hs + 0,  &magic,   4);
-  hs[4] = version;
-  hs[5] = dims;
-  std::memcpy(hs + 6,  &flags,   2);
-  std::memcpy(hs + 8,  &rank,    4);
+  std::memcpy(hs + 0,  &magic,    4);
+  hs[4]  = version;
+  hs[5]  = dims;
+  std::memcpy(hs + 6,  &flags,    2);
+  std::memcpy(hs + 8,  &rank,     4);
   std::memcpy(hs + 12, &treeId32, 4);
+  hs[16] = patchSize;
+  hs[17] = nUnknowns;
+  hs[18] = nAux;
+  // hs[19] = 0 (pad, already zero-initialised)
 
   writeAll(fd, hs, sizeof(hs));
 
@@ -177,6 +184,17 @@ void STVConnection::openTreeSocket(int treeId, int mpiRank,
     ::close(fd);
     return;
   }
+
+{% if STV_UNKNOWN_NAMES_BYTES %}
+  // Send METADATA_NAMES frame immediately after ACK (tree 0 only, once per process)
+  {
+    static std::once_flag _metaSent;
+    std::call_once(_metaSent, [fd]() {
+      static const uint8_t namesBuf[] = { {{ STV_UNKNOWN_NAMES_BYTES | join(', ') }} };
+      sendFrame(fd, FRAME_METADATA_NAMES, namesBuf, sizeof(namesBuf));
+    });
+  }
+{% endif %}
 
   std::lock_guard<std::mutex> lock(_socketsMutex);
   _treeSockets[treeId] = fd;

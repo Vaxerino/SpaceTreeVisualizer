@@ -1,6 +1,6 @@
 # SpaceTreeVisualizer — Wire Protocol Specification
 
-Version: 1
+Version: 2
 Encoding: little-endian throughout (unless noted)
 Source of truth: `backend/src/frameTypes.ts`, `spacetree_visualizer/_templates/STVConnection.cpp.jinja2`
 
@@ -14,9 +14,10 @@ Each Peano spacetree (one per thread) opens a dedicated TCP connection to the ba
 C++ sender                          backend
 ──────────                          ───────
 connect()
-── Handshake (14 bytes) ──────────▶
+── Handshake (20 bytes) ──────────▶
                          parse, register tree
 ◀── ACK (1 byte) ────────────────
+── METADATA_NAMES (optional) ─────▶
 [optional: STEP_BEGIN, CELL_BATCH, STEP_END, PAUSE_ACK / CONTINUE loop]
 close()
 ```
@@ -27,18 +28,22 @@ All binary values are unsigned unless prefixed with `int`. All multi-byte intege
 
 ## Handshake
 
-The C++ sender transmits a fixed 16-byte header immediately after the TCP connection is established. The backend replies with a 1-byte ACK.
+The C++ sender transmits a fixed 20-byte header immediately after the TCP connection is established. The backend replies with a 1-byte ACK.
 
-### Request (C++ → backend, 16 bytes)
+### Request (C++ → backend, 20 bytes)
 
-| Offset | Size | Type   | Name     | Value / Notes |
-|--------|------|--------|----------|---------------|
-| 0      | 4    | uint32 | MAGIC    | `0x50454E30` = ASCII `PEN0` |
-| 4      | 1    | uint8  | VERSION  | `0x01` |
-| 5      | 1    | uint8  | DIMS     | `2` or `3` (spatial dimensions) |
-| 6      | 2    | uint16 | FLAGS    | see flag bits below |
-| 8      | 4    | int32  | RANK     | MPI rank (0 for serial) |
-| 12     | 4    | int32  | TREE_ID  | Peano spacetree ID |
+| Offset | Size | Type   | Name       | Value / Notes |
+|--------|------|--------|------------|---------------|
+| 0      | 4    | uint32 | MAGIC      | `0x50454E30` = ASCII `PEN0` |
+| 4      | 1    | uint8  | VERSION    | `0x02` |
+| 5      | 1    | uint8  | DIMS       | `2` or `3` (spatial dimensions) |
+| 6      | 2    | uint16 | FLAGS      | see flag bits below |
+| 8      | 4    | int32  | RANK       | MPI rank (0 for serial) |
+| 12     | 4    | int32  | TREE_ID    | Peano spacetree ID |
+| 16     | 1    | uint8  | PATCH_SIZE | FV patch size (number of subcells per dimension) |
+| 17     | 1    | uint8  | N_UNKNOWNS | Number of PDE unknowns per subcell |
+| 18     | 1    | uint8  | N_AUX      | Number of auxiliary variables per subcell |
+| 19     | 1    | —      | PAD        | zero |
 
 **Handshake FLAGS bits:**
 
@@ -81,15 +86,16 @@ After the handshake all communication is frame-based. Every frame begins with a 
 
 ### Frame Types
 
-| Hex  | Name          | Direction        | Payload description |
-|------|---------------|------------------|---------------------|
-| 0x01 | `STEP_BEGIN`  | C++ → backend    | step index + timestamp |
-| 0x02 | `STEP_END`    | C++ → backend    | step index |
-| 0x03 | `CELL_BATCH`  | C++ → backend    | array of `CellRecord` |
-| 0x04 | `FACE_BATCH`  | C++ → backend    | array of `FaceRecord` (Phase 2) |
-| 0x05 | `VERTEX_BATCH`| C++ → backend    | array of `VertexRecord` (Phase 2) |
-| 0x06 | `PAUSE_ACK`   | C++ → backend    | zero-length payload; C++ blocks |
-| 0x07 | `CONTINUE`    | backend → C++    | zero-length payload; unblocks C++ |
+| Hex  | Name             | Direction        | Payload description |
+|------|------------------|------------------|---------------------|
+| 0x01 | `STEP_BEGIN`     | C++ → backend    | step index + timestamp |
+| 0x02 | `STEP_END`       | C++ → backend    | step index |
+| 0x03 | `CELL_BATCH`     | C++ → backend    | array of `CellRecord` |
+| 0x04 | `FACE_BATCH`     | C++ → backend    | array of `FaceRecord` (Phase 2) |
+| 0x05 | `VERTEX_BATCH`   | C++ → backend    | array of `VertexRecord` (Phase 2) |
+| 0x06 | `PAUSE_ACK`      | C++ → backend    | zero-length payload; C++ blocks |
+| 0x07 | `CONTINUE`       | backend → C++    | zero-length payload; unblocks C++ |
+| 0x08 | `METADATA_NAMES` | C++ → backend    | NUL-separated UTF-8 unknown names (optional, sent once after ACK) |
 
 ---
 
@@ -169,6 +175,16 @@ The number of float64 values = `patch_size^DIMS × (n_unknowns + n_aux_vars)`. T
 | 6   | 0x0040 | `INSIDE_DOMAIN`       | `CellMarker::areAllVerticesInsideDomain()` |
 | 9   | 0x0200 | `WILL_BE_ENCLAVE`     | `CellMarker::willBeEnclave()` |
 | 10  | 0x0400 | `HAS_BEEN_ENCLAVE`    | `CellMarker::hasBeenEnclave()` |
+
+### METADATA_NAMES payload (variable length)
+
+Sent once, immediately after the backend ACK, by the tree that connects first (tree 0 on rank 0). Contains the NUL-separated UTF-8 names of the `N_UNKNOWNS` solver unknowns:
+
+```
+"rho\0vx\0vy\0vz\0E"
+```
+
+The backend parses this by splitting on `\0` and exposes the names via the `/api/meta` REST endpoint. If this frame is never sent, `unknownNames` in `/api/meta` is `null`.
 
 ### FACE_BATCH payload (Phase 2)
 

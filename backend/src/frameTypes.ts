@@ -4,7 +4,7 @@
  */
 
 export const MAGIC = 0x50454e30; // "PEN0"
-export const VERSION = 0x01;
+export const VERSION = 0x02;
 export const ACK_BYTE = 0x41; // 'A'
 
 // --- Handshake flags (FLAGS[2] in handshake) ---
@@ -15,13 +15,14 @@ export const HANDSHAKE_FLAG_FACE_DATA  = 0x0008;
 
 // --- Frame types ---
 export const enum FrameType {
-  STEP_BEGIN    = 0x01,
-  STEP_END      = 0x02,
-  CELL_BATCH    = 0x03,
-  FACE_BATCH    = 0x04,
-  VERTEX_BATCH  = 0x05,
-  PAUSE_ACK     = 0x06,
-  CONTINUE      = 0x07,
+  STEP_BEGIN       = 0x01,
+  STEP_END         = 0x02,
+  CELL_BATCH       = 0x03,
+  FACE_BATCH       = 0x04,
+  VERTEX_BATCH     = 0x05,
+  PAUSE_ACK        = 0x06,
+  CONTINUE         = 0x07,
+  METADATA_NAMES   = 0x08,
 }
 
 // --- Frame flags ---
@@ -36,15 +37,20 @@ export const FRAME_OFFSET_PAYLOAD_LEN = 4;  // uint32 LE
 export const FRAME_OFFSET_RAW_LEN     = 8;  // uint32 LE
 export const FRAME_OFFSET_CHECKSUM    = 12; // uint32 LE (crc32)
 
-// --- Handshake layout (16 bytes) ---
-// MAGIC(4) + VERSION(1) + DIMS(1) + FLAGS(2) + RANK(4) + TREE_ID(4) = 16
-export const HANDSHAKE_SIZE = 16;
-export const HANDSHAKE_OFFSET_MAGIC   = 0;  // uint32 LE
-export const HANDSHAKE_OFFSET_VERSION = 4;  // uint8
-export const HANDSHAKE_OFFSET_DIMS    = 5;  // uint8
-export const HANDSHAKE_OFFSET_FLAGS   = 6;  // uint16 LE
-export const HANDSHAKE_OFFSET_RANK    = 8;  // int32 LE
-export const HANDSHAKE_OFFSET_TREE_ID = 12; // int32 LE
+// --- Handshake layout (20 bytes, VERSION=0x02) ---
+// MAGIC(4) + VERSION(1) + DIMS(1) + FLAGS(2) + RANK(4) + TREE_ID(4) +
+// PATCH_SIZE(1) + N_UNKNOWNS(1) + N_AUX(1) + PAD(1) = 20
+export const HANDSHAKE_SIZE = 20;
+export const HANDSHAKE_OFFSET_MAGIC      = 0;  // uint32 LE
+export const HANDSHAKE_OFFSET_VERSION    = 4;  // uint8
+export const HANDSHAKE_OFFSET_DIMS       = 5;  // uint8
+export const HANDSHAKE_OFFSET_FLAGS      = 6;  // uint16 LE
+export const HANDSHAKE_OFFSET_RANK       = 8;  // int32 LE
+export const HANDSHAKE_OFFSET_TREE_ID    = 12; // int32 LE
+export const HANDSHAKE_OFFSET_PATCH_SIZE = 16; // uint8
+export const HANDSHAKE_OFFSET_N_UNKNOWNS = 17; // uint8
+export const HANDSHAKE_OFFSET_N_AUX      = 18; // uint8
+// offset 19 = PAD (zero)
 
 // --- CellRecord field sizes and layout ---
 // 3D: centre(12) + h(12) + level(2) + flags(2) + rel_pos(3) + pad(1) = 32 bytes geometry

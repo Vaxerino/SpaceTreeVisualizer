@@ -84,8 +84,20 @@ export class ProtocolParser {
       case FrameType.PAUSE_ACK:
         this.store.onPauseAck(this.conn.key);
         break;
+      case FrameType.METADATA_NAMES:
+        this.onMetadataNames(payload);
+        break;
       default:
         console.warn(`[parser ${this.conn.key}] unknown frame type 0x${type.toString(16)}`);
+    }
+  }
+
+  private onMetadataNames(payload: Buffer): void {
+    // Payload is NUL-separated UTF-8 unknown names: "rho\0vx\0vy\0E\0p"
+    const raw = payload.toString('utf8');
+    const names = raw.split('\0').filter(n => n.length > 0);
+    if (names.length > 0) {
+      this.store.setUnknownNames(names);
     }
   }
 

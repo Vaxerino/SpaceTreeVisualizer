@@ -1,5 +1,13 @@
 /** Shared types mirroring the backend types.ts */
 
+export interface SimMeta {
+  patchSize: number;
+  nUnknowns: number;
+  nAux: number;
+  unknownNames: string[] | null;
+}
+
+
 export interface CellRecord {
   cx: number; cy: number; cz: number;
   hx: number; hy: number; hz: number;

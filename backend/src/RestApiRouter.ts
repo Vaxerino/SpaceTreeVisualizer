@@ -11,6 +11,15 @@ import type { SpaceTreeStore } from './SpaceTreeStore';
 export function createRestRouter(store: SpaceTreeStore): Router {
   const router = Router();
 
+  router.get('/meta', (_req: Request, res: Response) => {
+    const meta = store.getSimMeta();
+    if (!meta) {
+      res.status(404).json({ error: 'no simulation connected yet' });
+      return;
+    }
+    res.json(meta);
+  });
+
   router.get('/status', (_req: Request, res: Response) => {
     res.json({
       connected: true,

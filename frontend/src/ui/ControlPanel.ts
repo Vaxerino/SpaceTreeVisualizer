@@ -1,5 +1,5 @@
 import { AppState } from '../store/AppState';
-import type { ColorMode, ColormapName } from '../types';
+import type { ColorMode, ColormapName, SimMeta } from '../types';
 import { COLORMAP_NAMES, COLORMAP_LABELS } from '../scene/ColormapRegistry';
 
 /**
@@ -41,7 +41,7 @@ export class ControlPanel {
 
         <div id="simFieldRow" class="range-row" style="display:none;margin-top:4px">
           <span class="mono">field</span>
-          <input type="number" id="simFieldIndex" min="0" max="99" value="${AppState.simFieldIndex}" class="num-input">
+          <select id="simFieldSelect" class="num-input"></select>
         </div>
       </div>
 
@@ -74,21 +74,22 @@ export class ControlPanel {
 
     const colormapRow = this.el.querySelector('#colormapRow') as HTMLElement;
     const simFieldRow = this.el.querySelector('#simFieldRow') as HTMLElement;
-    const simFieldInput = this.el.querySelector('#simFieldIndex') as HTMLInputElement;
+    const simFieldSelect = this.el.querySelector('#simFieldSelect') as HTMLSelectElement;
 
     // Sync select and visibility to current AppState on initial render
     const colorModeEl = this.el.querySelector('#colorMode') as HTMLSelectElement;
     colorModeEl.value = AppState.colorMode;
     (this.el.querySelector('#colormap') as HTMLSelectElement).value = AppState.colormap;
     colormapRow.style.display = AppState.colorMode === 'treeId' ? 'none' : '';
-    simFieldRow.style.display = AppState.colorMode === 'sim' ? '' : 'none';
+    // simFieldRow visibility is managed by updateSimMeta(); hide initially
+    simFieldRow.style.display = 'none';
 
     // Color mode
     this.el.querySelector('#colorMode')!.addEventListener('change', e => {
       const mode = (e.target as HTMLSelectElement).value as ColorMode;
       AppState.setState({ colorMode: mode });
       colormapRow.style.display = mode === 'treeId' ? 'none' : '';
-      simFieldRow.style.display = mode === 'sim' ? '' : 'none';
+      this.updateSimMeta(AppState.simMeta);
       this.onFilterChange();
     });
 
@@ -99,9 +100,9 @@ export class ControlPanel {
       this.onFilterChange();
     });
 
-    // Sim field index
-    simFieldInput.addEventListener('change', () => {
-      AppState.setState({ simFieldIndex: parseInt(simFieldInput.value, 10) });
+    // Sim field selector
+    simFieldSelect.addEventListener('change', () => {
+      AppState.setState({ simFieldIndex: parseInt(simFieldSelect.value, 10) });
       this.onFilterChange();
     });
 
@@ -137,5 +138,34 @@ export class ControlPanel {
   updateTreeList(trees: string[]): void {
     const el = this.el.querySelector('#treeList');
     if (el) el.textContent = trees.length > 0 ? trees.join('\n') : '—';
+  }
+
+  /**
+   * Populate the sim field dropdown from SimMeta.
+   * Called whenever /api/meta is fetched. Shows the row only when patchSize > 0.
+   */
+  updateSimMeta(meta: SimMeta | null): void {
+    const simFieldRow    = this.el.querySelector('#simFieldRow') as HTMLElement | null;
+    const simFieldSelect = this.el.querySelector('#simFieldSelect') as HTMLSelectElement | null;
+    if (!simFieldRow || !simFieldSelect) return;
+
+    const inSimMode = AppState.colorMode === 'sim';
+    const hasMeta   = meta !== null && meta.patchSize > 0 && meta.nUnknowns > 0;
+    simFieldRow.style.display = (inSimMode && hasMeta) ? '' : 'none';
+
+    if (!hasMeta) return;
+
+    // Rebuild options: named unknowns if available, else "0".."nUnknowns-1"
+    const prev = AppState.simFieldIndex;
+    simFieldSelect.innerHTML = '';
+    for (let i = 0; i < meta.nUnknowns; i++) {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = meta.unknownNames?.[i] ?? String(i);
+      simFieldSelect.appendChild(opt);
+    }
+    // Restore selection (clamp to valid range)
+    simFieldSelect.value = String(Math.min(prev, meta.nUnknowns - 1));
+    AppState.setState({ simFieldIndex: parseInt(simFieldSelect.value, 10) });
   }
 }
