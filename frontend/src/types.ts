@@ -38,11 +38,20 @@ export const CELL_FLAG_INSIDE_DOMAIN     = 1 << 6;
 export const CELL_FLAG_WILL_BE_ENCLAVE   = 1 << 9;
 export const CELL_FLAG_HAS_BEEN_ENCLAVE  = 1 << 10;
 
-export type ColorMode = 'level' | 'local' | 'enclave' | 'refinement' | 'sim';
+export type ColorMode = 'level' | 'local' | 'enclave' | 'refinement' | 'sim' | 'treeId';
+
+export type ColormapName =
+  | 'turbo'
+  | 'viridis'
+  | 'plasma'
+  | 'magma'
+  | 'inferno'
+  | 'rdbu'
+  | 'grayscale';
 
 export interface FilterSpec {
-  minLevel: number;
-  maxLevel: number;
+  level: number;            // selected AMR level
+  levelCumulative: boolean; // true = show levels 0..level, false = show only level
   showLocal: boolean;
   showRemote: boolean;
 }
