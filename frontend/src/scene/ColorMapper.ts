@@ -1,4 +1,4 @@
-import type { CellRecord, ColorMode, ColormapName } from '../types';
+import type { CellRecord, ColorMode, ColormapName, SimMeta } from '../types';
 import {
   CELL_FLAG_IS_LOCAL,
   CELL_FLAG_HAS_BEEN_ENCLAVE, CELL_FLAG_WILL_BE_ENCLAVE,
@@ -80,16 +80,39 @@ export class ColorMapper {
     return this._color.set(hex);
   }
 
-  /** Compute min/max of a sim field across all cells. */
-  static simRange(cells: CellRecord[], fieldIndex: number): [number, number] {
+  /**
+   * Compute min/max of a sim field across all cells, scanning all subcells.
+   *
+   * When simMeta is provided (patchSize > 1), iterates all subcells using the
+   * correct interleaved layout: Q[sub*(nUnknowns+nAux) + fieldIndex].
+   * Falls back to direct indexing (patchSize=1) when simMeta is null.
+   */
+  static simRange(cells: CellRecord[], fieldIndex: number, simMeta: SimMeta | null): [number, number] {
     let min = Infinity, max = -Infinity;
-    for (const c of cells) {
-      const v = c.simData?.[fieldIndex];
-      if (v !== undefined) {
-        if (v < min) min = v;
-        if (v > max) max = v;
+
+    if (simMeta !== null && simMeta.patchSize > 1) {
+      const N = simMeta.nUnknowns + simMeta.nAux;
+      for (const c of cells) {
+        if (!c.simData) continue;
+        const nSubs = Math.floor(c.simData.length / N);
+        for (let sub = 0; sub < nSubs; sub++) {
+          const v = c.simData[sub * N + fieldIndex];
+          if (v !== undefined && isFinite(v)) {
+            if (v < min) min = v;
+            if (v > max) max = v;
+          }
+        }
+      }
+    } else {
+      for (const c of cells) {
+        const v = c.simData?.[fieldIndex];
+        if (v !== undefined && isFinite(v)) {
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
       }
     }
+
     if (!isFinite(min)) min = 0;
     if (!isFinite(max)) max = 1;
     if (min === max) max = min + 1;

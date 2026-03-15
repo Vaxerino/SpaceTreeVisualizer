@@ -4,6 +4,7 @@ import {
   HANDSHAKE_SIZE,
   HANDSHAKE_OFFSET_MAGIC, HANDSHAKE_OFFSET_VERSION, HANDSHAKE_OFFSET_DIMS,
   HANDSHAKE_OFFSET_FLAGS, HANDSHAKE_OFFSET_RANK, HANDSHAKE_OFFSET_TREE_ID,
+  HANDSHAKE_OFFSET_PATCH_SIZE, HANDSHAKE_OFFSET_N_UNKNOWNS, HANDSHAKE_OFFSET_N_AUX,
   HANDSHAKE_FLAG_ZLIB, HANDSHAKE_FLAG_PAUSE_MODE,
   HANDSHAKE_FLAG_CELL_DATA, HANDSHAKE_FLAG_FACE_DATA,
   FrameType,
@@ -71,10 +72,13 @@ export class TCPServer {
         console.warn(`[tcp] ${addr}: version mismatch (got ${version}, expected ${VERSION})`);
       }
 
-      const dims  = handshakeBuffer.readUInt8(HANDSHAKE_OFFSET_DIMS);
-      const flags = handshakeBuffer.readUInt16LE(HANDSHAKE_OFFSET_FLAGS);
-      const rank  = handshakeBuffer.readInt32LE(HANDSHAKE_OFFSET_RANK);
-      const treeId = handshakeBuffer.readInt32LE(HANDSHAKE_OFFSET_TREE_ID);
+      const dims      = handshakeBuffer.readUInt8(HANDSHAKE_OFFSET_DIMS);
+      const flags     = handshakeBuffer.readUInt16LE(HANDSHAKE_OFFSET_FLAGS);
+      const rank      = handshakeBuffer.readInt32LE(HANDSHAKE_OFFSET_RANK);
+      const treeId    = handshakeBuffer.readInt32LE(HANDSHAKE_OFFSET_TREE_ID);
+      const patchSize = handshakeBuffer.readUInt8(HANDSHAKE_OFFSET_PATCH_SIZE);
+      const nUnknowns = handshakeBuffer.readUInt8(HANDSHAKE_OFFSET_N_UNKNOWNS);
+      const nAux      = handshakeBuffer.readUInt8(HANDSHAKE_OFFSET_N_AUX);
 
       conn = {
         rank, treeId, dims,
@@ -83,10 +87,14 @@ export class TCPServer {
         hasCellData:  (flags & HANDSHAKE_FLAG_CELL_DATA)   !== 0,
         hasFaceData:  (flags & HANDSHAKE_FLAG_FACE_DATA)   !== 0,
         key: `${rank}:${treeId}`,
+        patchSize, nUnknowns, nAux,
       };
 
+      this.store.setSimMeta(patchSize, nUnknowns, nAux);
+
       console.log(`[tcp] ${addr}: handshake ok — tree ${conn.key}, dims=${dims}, ` +
-        `zlib=${conn.zlibEnabled}, pause=${conn.pauseMode}, cellData=${conn.hasCellData}`);
+        `zlib=${conn.zlibEnabled}, pause=${conn.pauseMode}, cellData=${conn.hasCellData}, ` +
+        `patchSize=${patchSize}, nUnknowns=${nUnknowns}, nAux=${nAux}`);
 
       // Register tree so store knows the expected tree count before any STEP_BEGIN.
       this.store.registerTree(conn.key);

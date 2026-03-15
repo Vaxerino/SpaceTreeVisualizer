@@ -1,4 +1,4 @@
-import type { CellRecord, ColorMode, ColormapName, FilterSpec, SnapshotSummary } from '../types';
+import type { CellRecord, ColorMode, ColormapName, FilterSpec, SnapshotSummary, SimMeta } from '../types';
 
 type Listener = () => void;
 
@@ -18,6 +18,7 @@ class AppStateStore {
   colormap: ColormapName = 'turbo';
   filter: FilterSpec = { level: 12, levelCumulative: true, showLocal: true, showRemote: true };
   simFieldIndex: number = 0;
+  simMeta: SimMeta | null = null;
 
   selectedCell: CellRecord | null = null;
   selectedInstanceIndex: number = -1;

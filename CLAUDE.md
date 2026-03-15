@@ -85,12 +85,16 @@ Key files:
 
 Key files:
 - `frontend/src/scene/CellRenderer.ts` — InstancedMesh, max 500K cells, 5% gap
-- `frontend/src/scene/ColorMapper.ts` — Turbo (level), coolwarm (sim data), flag colors
+- `frontend/src/scene/ColorMapper.ts` — routes color modes through ColormapRegistry LUTs; treeId uses golden-angle hue hashing
+- `frontend/src/scene/ColormapRegistry.ts` — 256-entry pre-sampled LUTs for 7 d3 colormaps (turbo, viridis, plasma, magma, inferno, rdbu, grayscale)
+- `frontend/src/ui/ColorbarOverlay.ts` — ParaView-style canvas overlay, shown for level/sim modes only
 - `frontend/src/ui/DetailPanel.ts` — decoded CellMarker struct view
 
 ### Three.js / WebGL gotchas
 - **`mesh.frustumCulled = false`** on every `InstancedMesh` — base geometry sphere (origin, r=0.866) falls outside top-down 2D cameras; ALL instances silently skipped. Diagnose: `renderer.info.render.triangles === 0` after render.
-- **CSS Grid canvas inflation** — `renderer.setSize(w, h, false)` sets `canvas.height` HTML attribute, inflating `1fr` grid rows. Require `min-height: 0; min-width: 0` on `#canvas`.
+- **CSS Grid canvas inflation** — `renderer.setSize(w, h, false)` sets `canvas.height` HTML attribute, inflating `1fr` grid rows. `min-height: 0; min-width: 0` must be on the grid child (`#canvas-wrap`).
+- **Canvas overlay positioning** — absolutely-positioned overlays need `position: relative` on the direct parent. Append overlays to `#canvas-wrap`, not `#app`.
+- **`BoxGeometry` zeroes instance colors** — Three.js r183 `color_vertex.glsl` multiplies the geometry `color` attribute by `instanceColor`. `BoxGeometry` has no `color` attribute so WebGL supplies `(0,0,0)`, silently zeroing all instance colors. Fix: `geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertCount * 3).fill(1), 3))` after creating the geometry.
 - **SwiftShader (Playwright/headless)** — silently fails GPU buffer allocations ≥2M instances (~152MB). Keep `MAX_INSTANCES ≤ 500K`.
 - **2D camera** — `orientFor2D()` positions at z=1.2 (fills ~72% viewport); `controls.minDistance = 0.05` prevents camera passing through z=0 cell plane.
 
@@ -119,6 +123,9 @@ Key files:
 - `AppState` is the single reactive singleton — update via `setState()`, never mutate directly
 - `CellRenderer.updateFromSnapshot()` is the only entry point for scene updates
 - Re-filter without re-fetch when filter/color mode changes (call `updateFromSnapshot` with `currentSnapshot.cells`)
+- **d3-scale-chromatic format:** `interpolateTurbo/Greys/RdBu` return `"rgb(r,g,b)"` but `interpolateViridis/Plasma/Magma/Inferno` return `"#RRGGBB"` — handle both when parsing.
+- **JS `%` negative values:** `(-1) % 360 === -1` in JS. For hue math use `((n % 360) + 360) % 360`.
+- **Canvas text clipping:** `textBaseline = 'top'` means Y is text top. Budget `font-size` px below the draw Y — 8px bottom padding is insufficient for a 10px font.
 
 ### UI
 - Dark theme: `#141414` bg, `#1e1e1e` panels, `#2e2e2e` borders, `#4a9eff` accent
@@ -137,6 +144,8 @@ Key files:
 
 **Run:** `cd tests/exahype2-fv-euler && bash -l -c "module load mpi 2>/dev/null; ./ExaHyPE"`
 
+**Playwright:** `npx playwright install chromium` (no sudo). Skip `--with-deps` (requires root).
+
 ---
 
 ## Current Phase
@@ -144,5 +153,7 @@ Key files:
 **Phase 1 + integration tests complete:** backend TCP+WS+REST, frontend scene + UI, `test_sender.py`, and `tests/exahype2-fv-euler/` integration test suite.
 
 **Phase 1.5 complete:** sim data streaming — C++ patch doubles sent (HAS_CELL_DATA), backend parses to `number[]`, frontend field picker wired.
+
+**Phase 1.5+ complete (td-e13a11):** frontend overhaul — selectable colormaps (d3-scale-chromatic LUT registry), level slider + cumulative toggle, treeId color mode, ParaView-style colorbar overlay.
 
 **Phase 2:** timeline/pause, face+vertex rendering, multi-rank TreeSelector

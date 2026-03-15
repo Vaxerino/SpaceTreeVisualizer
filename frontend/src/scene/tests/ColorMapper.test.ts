@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import * as THREE from 'three';
 import type { CellRecord } from '../../types';
 import { ColorMapper } from '../ColorMapper';
 import { sample } from '../ColormapRegistry';

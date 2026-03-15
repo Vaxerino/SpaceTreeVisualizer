@@ -71,6 +71,9 @@ class SpaceTreeVisualizerActionSet(ActionSet):
             "STV_PATCH_SIZE": self._patch_size(),
             "STV_N_UNKNOWNS": self._n_unknowns(),
             "STV_N_AUX": self._n_aux(),
+            # List of byte values (ints) for the NUL-separated unknown names string.
+            # Empty list means no METADATA_NAMES frame is sent.
+            "STV_UNKNOWN_NAMES_BYTES": self._unknown_names_bytes(),
         }
 
     # ------------------------------------------------------------------
@@ -101,6 +104,32 @@ class SpaceTreeVisualizerActionSet(ActionSet):
             return self._solver._variable_shortcuts.auxiliary_variables
         except AttributeError:
             return 0
+
+    def _unknown_names_bytes(self) -> list:
+        """
+        Return a list of byte values encoding the NUL-separated unknown names.
+        E.g. ["rho", "vx"] → [114,104,111, 0, 118,120].
+        Returns [] (no metadata frame) if names are unavailable.
+        """
+        names = []
+        try:
+            vs = self._solver._variable_shortcuts
+            # Try common attribute names used by ExaHype2 solver introspection
+            for attr in ("names", "unknown_names", "variable_names"):
+                candidate = getattr(vs, attr, None)
+                if candidate:
+                    names = [str(n) for n in candidate]
+                    break
+        except AttributeError:
+            pass
+        if not names:
+            return []
+        result = []
+        for i, name in enumerate(names):
+            result.extend(ord(c) for c in name)
+            if i < len(names) - 1:
+                result.append(0)  # NUL separator (not after last name)
+        return result
 
     # ------------------------------------------------------------------
     # Template loading

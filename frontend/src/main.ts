@@ -3,14 +3,14 @@ import { CellRenderer } from './scene/CellRenderer';
 import { SelectionHighlight } from './scene/SelectionHighlight';
 import { PickingHelper } from './scene/PickingHelper';
 import { WebSocketClient } from './WebSocketClient';
-import { SnapshotCache } from './store/SnapshotCache';
+import { SnapshotCache, BACKEND } from './store/SnapshotCache';
 import { AppState } from './store/AppState';
 import { ControlPanel } from './ui/ControlPanel';
 import { DetailPanel } from './ui/DetailPanel';
 import { StatusIndicator } from './ui/StatusIndicator';
 import { TimelineBar } from './ui/TimelineBar';
 import { ColorbarOverlay } from './ui/ColorbarOverlay';
-import type { CellRecord, ColorMode, StepSnapshot } from './types';
+import type { CellRecord, ColorMode, StepSnapshot, SimMeta } from './types';
 
 // --- DOM structure ---
 const app = document.getElementById('app')!;
@@ -57,6 +57,19 @@ picker.onPick(id => {
 let currentSnapshot: StepSnapshot | null = null;
 let cameraOriented = false;
 
+/** Fetch /api/meta and update AppState + ControlPanel. No-op if backend has no meta yet. */
+async function fetchAndApplyMeta(): Promise<void> {
+  try {
+    const res = await fetch(`${BACKEND}/api/meta`);
+    if (!res.ok) return; // 404 = no simulation connected yet
+    const meta = await res.json() as SimMeta;
+    AppState.setState({ simMeta: meta });
+    controls.updateSimMeta(meta);
+  } catch {
+    // Network error (backend not running) — silently ignore
+  }
+}
+
 /** Auto-orient camera once based on 2D vs 3D cell data. */
 function orientCameraIfNeeded(snap: StepSnapshot): void {
   if (cameraOriented || snap.cells.length === 0) return;
@@ -81,7 +94,10 @@ function updateColorbar(cells: CellRecord[], mode: ColorMode): void {
     colorbar.update(AppState.colormap, 0, maxLevel, 'level');
   } else if (mode === 'sim') {
     const [min, max] = cellRenderer.lastSimRange;
-    colorbar.update(AppState.colormap, min, max, `field[${AppState.simFieldIndex}]`);
+    const meta = AppState.simMeta;
+    const name = meta?.unknownNames?.[AppState.simFieldIndex];
+    const label = name ? `FIELD[${name}]` : `field[${AppState.simFieldIndex}]`;
+    colorbar.update(AppState.colormap, min, max, label);
   } else {
     colorbar.hide();
   }
@@ -97,6 +113,7 @@ function reapplyFilter(): void {
     AppState.colormap,
     AppState.simFieldIndex,
     getMaxLevel(cells),
+    AppState.simMeta,
   );
   updateColorbar(cells, AppState.colorMode);
   highlight.hide();
@@ -108,6 +125,10 @@ async function loadAndDisplay(stepIndex: number): Promise<void> {
   if (!snap) return;
   currentSnapshot = snap;
   orientCameraIfNeeded(snap);
+  // Fetch meta lazily — cheap no-op once already loaded
+  if (AppState.simMeta === null) {
+    await fetchAndApplyMeta();
+  }
   const cells = snap.cells;
   cellRenderer.updateFromSnapshot(
     cells,
@@ -116,6 +137,7 @@ async function loadAndDisplay(stepIndex: number): Promise<void> {
     AppState.colormap,
     AppState.simFieldIndex,
     getMaxLevel(cells),
+    AppState.simMeta,
   );
   updateColorbar(cells, AppState.colorMode);
   status.setLive(snap.stepIndex, snap.cellCount);
@@ -156,3 +178,11 @@ timeline.onContinue(() => {
 
 // Attempt to load latest snapshot on startup
 void loadAndDisplay(-1);
+
+// Expose a minimal debug handle for Playwright integration tests.
+// Gives tests read-only access to renderer internals without modifying the
+// production rendering path.
+(window as unknown as Record<string, unknown>)['__STV_DEBUG__'] = {
+  get instanceCount() { return cellRenderer.mesh.count; },
+  get simMeta() { return AppState.simMeta; },
+};

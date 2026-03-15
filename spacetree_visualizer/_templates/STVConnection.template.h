@@ -21,11 +21,12 @@
 class STVConnection {
 public:
   /// Frame type constants (must match backend/src/frameTypes.ts)
-  static constexpr uint8_t FRAME_STEP_BEGIN  = 0x01;
-  static constexpr uint8_t FRAME_STEP_END    = 0x02;
-  static constexpr uint8_t FRAME_CELL_BATCH  = 0x03;
-  static constexpr uint8_t FRAME_PAUSE_ACK   = 0x06;
-  static constexpr uint8_t FRAME_CONTINUE    = 0x07;
+  static constexpr uint8_t FRAME_STEP_BEGIN     = 0x01;
+  static constexpr uint8_t FRAME_STEP_END       = 0x02;
+  static constexpr uint8_t FRAME_CELL_BATCH     = 0x03;
+  static constexpr uint8_t FRAME_PAUSE_ACK      = 0x06;
+  static constexpr uint8_t FRAME_CONTINUE       = 0x07;
+  static constexpr uint8_t FRAME_METADATA_NAMES = 0x08;
 
   /// Handshake / frame flag bits
   static constexpr uint16_t FLAG_ZLIB          = 0x0001;
@@ -35,7 +36,7 @@ public:
 
   /// Protocol constants
   static constexpr uint32_t MAGIC   = 0x50454E30u;
-  static constexpr uint8_t  VERSION = 0x01;
+  static constexpr uint8_t  VERSION = 0x02;
   static constexpr int COMPRESS_THRESHOLD = {{ STV_COMPRESS_THRESHOLD }};
 
   /**

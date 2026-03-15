@@ -1,4 +1,4 @@
-import type { CellRecord, StepSnapshot, SnapshotSummary } from './types';
+import type { CellRecord, StepSnapshot, SnapshotSummary, SimMeta } from './types';
 
 export type StepCommittedCallback = (snapshot: StepSnapshot) => void;
 
@@ -13,6 +13,9 @@ export class SpaceTreeStore {
   /** Ring buffer of committed snapshots, newest at the end. */
   private snapshots: StepSnapshot[] = [];
   private maxSnapshots: number;
+
+  /** Simulation patch metadata (set from the first connecting tree's handshake). */
+  private simMeta: SimMeta | null = null;
 
   /** Tree keys registered at TCP handshake time. */
   private registeredTrees: Set<string> = new Set();
@@ -52,6 +55,24 @@ export class SpaceTreeStore {
   /** Register a tree at TCP handshake time (before any STEP_BEGIN). */
   registerTree(key: string): void {
     this.registeredTrees.add(key);
+  }
+
+  /** Record patch metadata from a connecting tree's handshake. First writer wins. */
+  setSimMeta(patchSize: number, nUnknowns: number, nAux: number): void {
+    if (this.simMeta === null) {
+      this.simMeta = { patchSize, nUnknowns, nAux, unknownNames: null };
+    }
+  }
+
+  /** Set unknown names from a METADATA_NAMES frame (may arrive after setSimMeta). */
+  setUnknownNames(names: string[]): void {
+    if (this.simMeta !== null) {
+      this.simMeta = { ...this.simMeta, unknownNames: names };
+    }
+  }
+
+  getSimMeta(): SimMeta | null {
+    return this.simMeta;
   }
 
   /** Register a listener called whenever a step is committed. */

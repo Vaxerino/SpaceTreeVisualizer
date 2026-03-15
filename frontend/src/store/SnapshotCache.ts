@@ -1,6 +1,6 @@
 import type { StepSnapshot } from '../types';
 
-const BACKEND = 'http://localhost:7422';
+export const BACKEND = 'http://localhost:7422';
 const MAX_CACHED = 50;
 
 /** LRU cache of downloaded snapshots. Fetches from REST API on miss. */
