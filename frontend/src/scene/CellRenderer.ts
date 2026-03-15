@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { CellRecord, FilterSpec, ColorMode } from '../types';
+import type { CellRecord, FilterSpec, ColorMode, ColormapName } from '../types';
+import { CELL_FLAG_IS_LOCAL } from '../types';
 import { ColorMapper } from './ColorMapper';
 
 // Pre-allocated instance count. 500K × ~76 bytes ≈ 38 MB GPU — fits comfortably
@@ -20,6 +21,9 @@ export class CellRenderer {
   private readonly mapper = new ColorMapper();
   private currentCells: CellRecord[] = [];
 
+  /** Set after every updateFromSnapshot call in 'sim' mode; [0,1] otherwise. */
+  lastSimRange: [number, number] = [0, 1];
+
   constructor(scene: THREE.Scene) {
     const geo = new THREE.BoxGeometry(1, 1, 1);
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -28,7 +32,7 @@ export class CellRenderer {
     this.mesh.count = 0;
     // Disable frustum culling: the base geometry's bounding sphere is a unit cube
     // at the origin, which may lie outside the camera frustum for a 2D top-down
-    // camera.  All instances are within [0,1]³ so culling has no benefit here.
+    // camera. All instances are within [0,1]³ so culling has no benefit here.
     this.mesh.frustumCulled = false;
     scene.add(this.mesh);
   }
@@ -38,11 +42,14 @@ export class CellRenderer {
     cells: CellRecord[],
     filter: FilterSpec,
     colorMode: ColorMode,
-    simFieldIndex = 0,
+    colormap: ColormapName,
+    simFieldIndex: number,
+    maxLevel: number,
   ): void {
     const [simMin, simMax] = colorMode === 'sim'
       ? ColorMapper.simRange(cells, simFieldIndex)
       : [0, 1];
+    this.lastSimRange = [simMin, simMax];
 
     let count = 0;
     const filtered: CellRecord[] = [];
@@ -58,7 +65,7 @@ export class CellRenderer {
       this.dummy.updateMatrix();
       this.mesh.setMatrixAt(count, this.dummy.matrix);
 
-      const color = this.mapper.forCell(c, colorMode, simMin, simMax, simFieldIndex);
+      const color = this.mapper.forCell(c, colorMode, colormap, simMin, simMax, simFieldIndex, maxLevel);
       this.mesh.setColorAt(count, color);
 
       filtered.push(c);
@@ -81,8 +88,9 @@ export class CellRenderer {
   }
 
   private passesFilter(c: CellRecord, f: FilterSpec): boolean {
-    if (c.level < f.minLevel || c.level > f.maxLevel) return false;
-    const isLocal = (c.flags & 0x0004) !== 0;
+    const levelOk = f.levelCumulative ? c.level <= f.level : c.level === f.level;
+    if (!levelOk) return false;
+    const isLocal = (c.flags & CELL_FLAG_IS_LOCAL) !== 0;
     if (isLocal && !f.showLocal) return false;
     if (!isLocal && !f.showRemote) return false;
     return true;
