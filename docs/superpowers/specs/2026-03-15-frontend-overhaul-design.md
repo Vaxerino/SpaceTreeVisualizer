@@ -46,7 +46,7 @@ Replace `minLevel`/`maxLevel` with a single-level + cumulative model:
 
 ```ts
 export interface FilterSpec {
-  level: number;           // selected AMR level
+  level: number;            // selected AMR level
   levelCumulative: boolean; // if true, show levels 0..level; if false, show only level
   showLocal: boolean;
   showRemote: boolean;
@@ -59,14 +59,35 @@ Default: `{ level: 4, levelCumulative: true, showLocal: true, showRemote: true }
 
 ## `ColormapRegistry.ts` (new file — `frontend/src/scene/`)
 
-Pure module with no mutable state. Builds a 256-entry `number[]` LUT for each colormap at module load time by calling d3-scale-chromatic interpolators. All colormaps are uniform — no special cases.
+Pure module with no mutable state. Builds a 256-entry `number[]` LUT for each colormap at module load time by calling d3-scale-chromatic interpolators. All entries use the same `buildLUT` pattern — no special cases at runtime.
+
+### Coolwarm note
+
+`d3-scale-chromatic` does not export an `interpolateCoolwarm` function. The coolwarm colormap (blue→grey→red) is defined locally using the existing 9-stop data from `ColorMapper.ts` as a helper interpolator, then fed into `buildLUT` like every other entry. `interpolateCool` from d3 must NOT be used — it is a sequential blue-to-cyan ramp, not a diverging coolwarm.
 
 ```ts
 import {
   interpolateTurbo, interpolateViridis, interpolatePlasma,
   interpolateMagma, interpolateInferno, interpolateGreys,
-  interpolateRdBu, interpolateCool,
+  interpolateRdBu,
 } from 'd3-scale-chromatic';
+
+// Local coolwarm interpolator (blue→grey→red), 9-stop, matching existing ColorMapper data
+const COOLWARM_STOPS: number[] = [
+  0x3b4cc0, 0x6788ee, 0x9abbff, 0xc9d8ef,
+  0xdddddd, 0xf5c4ad, 0xf7a889, 0xe8735a, 0xce2826,
+];
+function interpolateCoolwarm(t: number): string {
+  t = Math.max(0, Math.min(1, t));
+  const idx = t * (COOLWARM_STOPS.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.min(lo + 1, COOLWARM_STOPS.length - 1);
+  const a = COOLWARM_STOPS[lo]!, b = COOLWARM_STOPS[hi]!, f = idx - lo;
+  const r = Math.round(((a >> 16) & 0xff) + (((b >> 16) & 0xff) - ((a >> 16) & 0xff)) * f);
+  const g = Math.round(((a >>  8) & 0xff) + (((b >>  8) & 0xff) - ((a >>  8) & 0xff)) * f);
+  const bv= Math.round(( a        & 0xff) + (( b        & 0xff) - ( a        & 0xff)) * f);
+  return `rgb(${r},${g},${bv})`;
+}
 
 function buildLUT(fn: (t: number) => string): number[] {
   // Calls fn(i/255) for i in 0..255, parses "rgb(r,g,b)" → 0xRRGGBB
@@ -78,7 +99,7 @@ const LUTS: Record<ColormapName, number[]> = {
   plasma:    buildLUT(interpolatePlasma),
   magma:     buildLUT(interpolateMagma),
   inferno:   buildLUT(interpolateInferno),
-  coolwarm:  buildLUT(interpolateCool),
+  coolwarm:  buildLUT(interpolateCoolwarm),
   rdbu:      buildLUT(interpolateRdBu),
   grayscale: buildLUT(interpolateGreys),
 };
@@ -103,10 +124,17 @@ Runtime lookup is O(1) — no string parsing per cell during render.
 
 ## `ColorMapper.ts` (modified)
 
-- Remove hardcoded `TURBO_16` and `COOLWARM` arrays.
+- Remove the hardcoded `TURBO_16` and `COOLWARM` arrays and `lerpColor`/`coolwarmColor` helpers.
 - Import `sample` from `ColormapRegistry`.
-- `forCell()` gains a `colormap: ColormapName` parameter, used for all continuous modes.
-- Add `'treeId'` case: golden-angle hue hashing — `hue = (cell.treeId * 137.508) % 360`. Ignores `colormap` (treeId coloring is always hue-based, not LUT-based).
+- `forCell()` signature gains a `colormap: ColormapName` parameter.
+
+### Level mode — intentional behavior change
+
+Previously, level was mapped via `TURBO_16[level % 16]` (16-color cycling, fixed to Turbo). After this change, level is mapped as `t = level / maxLevel` through the selected colormap LUT, where `maxLevel` is passed in by the caller. This removes the modulo cycling and enables any colormap — this is an intentional improvement.
+
+### `'treeId'` case
+
+Uses golden-angle hue hashing — ignores the `colormap` parameter entirely:
 
 ```ts
 case 'treeId': {
@@ -115,29 +143,84 @@ case 'treeId': {
 }
 ```
 
-All other continuous modes (`level`, `local`, `enclave`, `refinement`, `sim`) use `sample(colormap, t)` to get their hex value, where `t` is computed per mode as before.
+### `'sim'` case — absent data fallback
+
+When `cell.simData` is undefined or the requested field index is out of range, use `val = 0` (maps to the minimum color of the scale). This matches the existing `?? 0` behavior. Absent-data cells will appear identical to minimum-value cells, which is acceptable — a distinct sentinel color is out of scope.
+
+### Updated `forCell()` signature
+
+```ts
+forCell(
+  cell: CellRecord,
+  mode: ColorMode,
+  colormap: ColormapName,
+  simMin: number,
+  simMax: number,
+  simFieldIndex: number,
+  maxLevel: number,
+): THREE.Color
+```
 
 ---
 
 ## `CellRenderer.ts` (modified)
 
-- `updateFromSnapshot()` gains `colormap: ColormapName` parameter, passed through to `ColorMapper.forCell()`.
-- `passesFilter()` updated for new `FilterSpec` shape:
-  - Cumulative off: `c.level === f.level`
-  - Cumulative on: `c.level <= f.level`
-  - `showLocal` / `showRemote` checks unchanged.
+### `updateFromSnapshot()` signature
+
+Full updated signature:
+
+```ts
+updateFromSnapshot(
+  cells: CellRecord[],
+  filter: FilterSpec,
+  colorMode: ColorMode,
+  colormap: ColormapName,
+  simFieldIndex: number,
+  maxLevel: number,
+): void
+```
+
+`maxLevel` is passed in from `main.ts` (computed from `cells`). `colormap` and `maxLevel` are forwarded to `ColorMapper.forCell()`.
+
+### `lastSimRange` property
+
+`CellRenderer` exposes a public `lastSimRange: [number, number] = [0, 1]` property, set during each call to `updateFromSnapshot()` when `colorMode === 'sim'`. `main.ts` reads this property after calling `updateFromSnapshot()` to supply the colorbar min/max. This avoids duplicating the `simRange()` calculation in `main.ts`.
+
+### `passesFilter()` updated
+
+```ts
+private passesFilter(c: CellRecord, f: FilterSpec): boolean {
+  const levelOk = f.levelCumulative ? c.level <= f.level : c.level === f.level;
+  if (!levelOk) return false;
+  const isLocal = (c.flags & CELL_FLAG_IS_LOCAL) !== 0;
+  if (isLocal && !f.showLocal) return false;
+  if (!isLocal && !f.showRemote) return false;
+  return true;
+}
+```
 
 ---
 
 ## `AppState.ts` (modified)
 
-Add:
+### Fields to remove
+
+- `filter.minLevel` — replaced by `filter.level`
+- `filter.maxLevel` — replaced by `filter.levelCumulative`
+
+### Fields to add
+
+- `selectedColormap: ColormapName = 'turbo'`
+
+### Updated default filter
 
 ```ts
-selectedColormap: ColormapName = 'turbo';
+filter: FilterSpec = { level: 4, levelCumulative: true, showLocal: true, showRemote: true };
 ```
 
-Default filter updated to `{ level: 4, levelCumulative: true, showLocal: true, showRemote: true }`.
+### Retained fields
+
+`simFieldIndex: number = 0` is retained unchanged.
 
 ---
 
@@ -149,62 +232,126 @@ Gains a `'treeId'` option: `<option value="treeId">SpaceTree ID</option>`.
 
 ### Colormap selector
 
-New `<select>` rendered directly below the color mode selector, populated from `COLORMAP_NAMES`. Hidden (`display:none`) when `colorMode === 'treeId'` (hue hashing, no LUT applies). On change: `AppState.setState({ selectedColormap })` → `onFilterChange()`.
+New `<select>` rendered directly below the color mode selector, populated from `COLORMAP_NAMES`/`COLORMAP_LABELS`. Hidden (`style.display = 'none'`) when `colorMode === 'treeId'`. On change: `AppState.setState({ selectedColormap })` → `onFilterChange()`.
 
-### Level filter (replaces min/max inputs)
+### Level filter — full replacement
+
+The **entire** level-filter section of `ControlPanel.render()` is replaced. The existing `levelMin`/`levelMax` inputs, `applyLevels` handler, and all related query selectors are removed. Replacement:
 
 ```html
-<label class="label">LEVEL FILTER</label>
-<div class="level-slider-row">
-  <input type="range" id="levelSlider" min="0" max="12" value="4">
-  <span id="levelValue" class="mono">4</span>
+<div class="panel-section">
+  <label class="label">LEVEL FILTER</label>
+  <div class="level-slider-row">
+    <input type="range" id="levelSlider" min="0" max="12" value="4">
+    <span id="levelValue" class="mono">4</span>
+  </div>
+  <label class="checkbox-row">
+    <input type="checkbox" id="levelCumulative" checked> cumulative (0–N)
+  </label>
 </div>
-<label class="checkbox-row">
-  <input type="checkbox" id="levelCumulative" checked> cumulative (0–N)
-</label>
 ```
 
-Slider fires `input` event (live update while dragging). Value display updates in sync. Checkbox toggles `filterSpec.levelCumulative`.
+The slider fires on `input` (live, while dragging). The `levelValue` span updates in sync. The checkbox toggles `filterSpec.levelCumulative`. On any change: `AppState.setState({ filter: { ...AppState.filter, level, levelCumulative } })` → `onFilterChange()`.
 
 ---
 
 ## `ColorbarOverlay.ts` (new file — `frontend/src/ui/`)
 
-A `<canvas>` element absolutely positioned over the Three.js canvas area, in the bottom-right corner.
+A `<canvas>` element absolutely positioned over the canvas wrapper div (see layout change below).
 
 **Appearance (ParaView-style):**
 - 200px wide × 14px gradient strip
 - Semi-transparent dark background: `rgba(20,20,20,0.75)`, 1px border `#2e2e2e`
-- Min and max value labels above left/right ends of the bar (JetBrains Mono, 10px)
-- Field label centered above the bar (uppercase, 9px, `#888`)
-- Positioned: `bottom: 12px; right: 12px`
+- Min and max value labels flanking the bar (JetBrains Mono, 10px, `#4a9eff`)
+- Field label centered above (uppercase, 9px, `#888`)
+- Position: `bottom: 12px; right: 12px; position: absolute`
 
 **Visibility:**
 - Shown for `level` and `sim` modes.
-- Hidden for `local`, `enclave`, `refinement`, `treeId` (categorical — no scalar range).
+- Hidden (`canvas.style.display = 'none'`) for `local`, `enclave`, `refinement`, `treeId`.
 
 **Interface:**
 
 ```ts
 class ColorbarOverlay {
-  constructor(canvasContainer: HTMLElement) { ... }
+  constructor(canvasWrapper: HTMLElement) { ... }
   update(colormap: ColormapName, min: number, max: number, label: string): void
   hide(): void
 }
 ```
 
-The gradient is drawn on the canvas using `createLinearGradient` with stops sampled from the LUT at 0, 0.25, 0.5, 0.75, 1.0.
+The gradient is drawn using `ctx.createLinearGradient` with 5 stops at t = 0, 0.25, 0.5, 0.75, 1.0 sampled from `ColormapRegistry.sample()`.
+
+---
+
+## Layout change — canvas wrapper div (`main.ts` + `index.html`)
+
+`ColorbarOverlay` requires `position: absolute` inside a `position: relative` container. The `<canvas id="canvas">` is currently a direct CSS Grid child of `#app` — appending an absolutely-positioned overlay to `#app` would position it relative to `<body>`, not the canvas cell.
+
+**Fix:** Wrap the canvas in a div in `main.ts`:
+
+```ts
+// In main.ts, replace:
+app.innerHTML = `
+  <div id="left-panel"></div>
+  <canvas id="canvas"></canvas>
+  ...
+`;
+
+// With:
+app.innerHTML = `
+  <div id="left-panel"></div>
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+  </div>
+  ...
+`;
+```
+
+Add to `index.html` styles:
+
+```css
+#canvas-wrap {
+  grid-area: canvas;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;  /* required so #canvas height:100% resolves correctly */
+}
+#canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+```
+
+`SceneManager` receives `document.getElementById('canvas')` as before — no change to the Three.js setup.
 
 ---
 
 ## `main.ts` (modified)
 
-- Instantiate `ColorbarOverlay`, passing the canvas container element.
-- In `reapplyFilter()` and `loadAndDisplay()`: pass `AppState.selectedColormap` to `cellRenderer.updateFromSnapshot()`.
-- After each render update, call `colorbar.update(...)` or `colorbar.hide()` based on the active color mode:
-  - `level`: `update(colormap, 0, maxLevel, 'level')`
-  - `sim`: `update(colormap, simMin, simMax, 'field[N]')`
-  - others: `hide()`
+- Wrap canvas in `#canvas-wrap` as described above.
+- Instantiate `ColorbarOverlay`, passing `document.getElementById('canvas-wrap')`.
+- Pass `AppState.selectedColormap` and `maxLevel` to `cellRenderer.updateFromSnapshot()`.
+- `maxLevel` is computed from `currentSnapshot.cells` with an empty-array guard:
+  `const maxLevel = cells.length > 0 ? Math.max(...cells.map(c => c.level)) : 0;`
+  (Using `Math.max(0, ...emptyArray)` returns `-Infinity` in JavaScript — the explicit guard is required.)
+- After each `updateFromSnapshot()`, update or hide the colorbar:
+
+```ts
+function updateColorbar(cells: CellRecord[], mode: ColorMode): void {
+  if (mode === 'level') {
+    const maxLevel = cells.length > 0 ? Math.max(...cells.map(c => c.level)) : 1;
+    colorbar.update(AppState.selectedColormap, 0, maxLevel, 'level');
+  } else if (mode === 'sim') {
+    const [min, max] = cellRenderer.lastSimRange;
+    colorbar.update(AppState.selectedColormap, min, max, `field[${AppState.simFieldIndex}]`);
+  } else {
+    colorbar.hide();
+  }
+}
+```
 
 ---
 
@@ -220,6 +367,7 @@ The gradient is drawn on the canvas using `createLinearGradient` with stops samp
 | `frontend/src/ui/ControlPanel.ts` | Modified |
 | `frontend/src/ui/ColorbarOverlay.ts` | **New** |
 | `frontend/src/main.ts` | Modified |
+| `frontend/index.html` | Modified (canvas-wrap CSS) |
 
 Unchanged: `DetailPanel`, `SelectionHighlight`, `PickingHelper`, `SceneManager`, `WebSocketClient`, `SnapshotCache`, `TimelineBar`.
 
@@ -230,8 +378,8 @@ Unchanged: `DetailPanel`, `SelectionHighlight`, `PickingHelper`, `SceneManager`,
 Add to `frontend/package.json`:
 
 ```
-d3-scale-chromatic   ^3.1.0
-@types/d3-scale-chromatic   ^3.0.0   (devDependency)
+d3-scale-chromatic        ^3.1.0
+@types/d3-scale-chromatic ^3.0.0   (devDependency)
 ```
 
 ---
