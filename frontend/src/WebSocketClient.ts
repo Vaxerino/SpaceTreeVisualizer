@@ -58,6 +58,7 @@ export class WebSocketClient {
 
     this.ws.onclose = () => {
       this.pendingSnapshots.clear();
+      this.emit('close', {});
       console.log(`[ws] disconnected, reconnecting in ${this.reconnectDelay}ms`);
       setTimeout(() => this.connect(), this.reconnectDelay);
       this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, 30000);
