@@ -162,11 +162,12 @@ export class ProtocolParser {
         // Read doubles via Buffer API to avoid Float64Array alignment requirements.
         // (subarray byteOffset is not guaranteed to be 8-byte aligned)
         const nDoubles = dataLen / 8;
-        const simData: number[] = new Array(nDoubles);
+        const simData = new Float32Array(nDoubles);
         for (let i = 0; i < nDoubles; i++) {
           simData[i] = payload.readDoubleLE(offset + i * 8);
         }
         cell.simData = simData;
+        cell.simDataLength = simData.length;
         offset += dataLen;
       }
 

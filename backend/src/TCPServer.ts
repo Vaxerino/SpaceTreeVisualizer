@@ -90,6 +90,10 @@ export class TCPServer {
         patchSize, nUnknowns, nAux,
       };
 
+      if (this.store.continueSenders.size === 0 && this.store.hasRetainedRunState()) {
+        this.store.resetForNewRun();
+      }
+
       this.store.setSimMeta(patchSize, nUnknowns, nAux);
 
       console.log(`[tcp] ${addr}: handshake ok — tree ${conn.key}, dims=${dims}, ` +

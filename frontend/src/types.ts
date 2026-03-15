@@ -16,7 +16,8 @@ export interface CellRecord {
   relPosX: number; relPosY: number; relPosZ: number;
   rank: number;
   treeId: number;
-  simData?: number[];
+  simData?: Float32Array | number[];
+  simDataLength?: number;
 }
 
 export interface StepSnapshot {
@@ -24,6 +25,7 @@ export interface StepSnapshot {
   timestamp: number;
   cellCount: number;
   treeIds: string[];
+  simFieldIndex?: number | null;
   cells: CellRecord[];
   faces: unknown[];
   vertices: unknown[];

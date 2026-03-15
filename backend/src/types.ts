@@ -36,8 +36,9 @@ export interface CellRecord {
   // Source info
   rank: number;
   treeId: number;
-  // Optional simulation data (raw doubles, length = unknowns * patch_volumes)
-  simData?: number[];
+  // Optional simulation data for the currently selected display field.
+  simData?: Float32Array;
+  simDataLength?: number;
 }
 
 export interface FaceRecord {
@@ -68,6 +69,7 @@ export interface StepSnapshot {
   vertices: VertexRecord[];
   treeIds: string[];    // which trees contributed
   cellCount: number;
+  simFieldIndex?: number;
 }
 
 /** Summary entry used in snapshot list responses. */

@@ -1,6 +1,7 @@
 import type { CellRecord, StepSnapshot, SnapshotSummary, SimMeta } from './types';
 
 export type StepCommittedCallback = (snapshot: StepSnapshot) => void;
+export type StoreResetCallback = () => void;
 
 /**
  * In-memory store for all received grid data.
@@ -13,6 +14,7 @@ export class SpaceTreeStore {
   /** Ring buffer of committed snapshots, newest at the end. */
   private snapshots: StepSnapshot[] = [];
   private maxSnapshots: number;
+  private maxSimSnapshots: number;
 
   /** Simulation patch metadata (set from the first connecting tree's handshake). */
   private simMeta: SimMeta | null = null;
@@ -44,12 +46,14 @@ export class SpaceTreeStore {
   private pausedTrees: Set<string> = new Set();
 
   private onCommitCallbacks: StepCommittedCallback[] = [];
+  private onResetCallbacks: StoreResetCallback[] = [];
 
   /** Socket fd for sending CONTINUE to paused trees (set by TCPServer). */
   continueSenders: Map<string, () => void> = new Map();
 
-  constructor(maxSnapshots = 200) {
+  constructor(maxSnapshots = 200, maxSimSnapshots = 10) {
     this.maxSnapshots = maxSnapshots;
+    this.maxSimSnapshots = maxSimSnapshots;
   }
 
   /** Register a tree at TCP handshake time (before any STEP_BEGIN). */
@@ -78,6 +82,38 @@ export class SpaceTreeStore {
   /** Register a listener called whenever a step is committed. */
   onStepCommitted(cb: StepCommittedCallback): void {
     this.onCommitCallbacks.push(cb);
+  }
+
+  onReset(cb: StoreResetCallback): void {
+    this.onResetCallbacks.push(cb);
+  }
+
+  hasRetainedRunState(): boolean {
+    return this.snapshots.length > 0
+      || this.pending.size > 0
+      || this.committedSteps.size > 0
+      || this.registeredTrees.size > 0
+      || this.simMeta !== null;
+  }
+
+  resetForNewRun(): void {
+    for (const timer of this.pendingCommitTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingCommitTimers.clear();
+    this.snapshots = [];
+    this.pending.clear();
+    this.pendingTimestamps.clear();
+    this.pendingEnded.clear();
+    this.committedSteps.clear();
+    this.pausedTrees.clear();
+    this.registeredTrees.clear();
+    this.simMeta = null;
+
+    console.log('[store] reset retained state for new simulation run');
+    for (const cb of this.onResetCallbacks) {
+      cb();
+    }
   }
 
   onStepBegin(treeKey: string, stepIndex: number, timestamp: number): void {
@@ -187,6 +223,7 @@ export class SpaceTreeStore {
     if (this.snapshots.length > this.maxSnapshots) {
       this.snapshots.shift();
     }
+    this.pruneHistoricalSimData();
 
     this.pending.delete(stepIndex);
     this.pendingTimestamps.delete(stepIndex);
@@ -223,5 +260,25 @@ export class SpaceTreeStore {
     return this.snapshots.length > 0
       ? this.snapshots[this.snapshots.length - 1].stepIndex
       : -1;
+  }
+
+  private pruneHistoricalSimData(): void {
+    let snapshotsWithSim = 0;
+    for (let i = this.snapshots.length - 1; i >= 0; i--) {
+      const snapshot = this.snapshots[i]!;
+      const hasSimData = snapshot.cells.some(cell => cell.simData !== undefined);
+      if (!hasSimData) continue;
+
+      snapshotsWithSim++;
+      if (snapshotsWithSim <= this.maxSimSnapshots) continue;
+
+      for (const cell of snapshot.cells) {
+        if (cell.simData) {
+          cell.simDataLength = cell.simData.length;
+          delete cell.simData;
+        }
+      }
+      delete snapshot.simFieldIndex;
+    }
   }
 }

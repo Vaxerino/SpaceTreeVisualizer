@@ -16,7 +16,7 @@ export class ColorMapper {
    * @param colormap  Which LUT to use for continuous modes (ignored for treeId).
    * @param simMin    Min value for sim normalization.
    * @param simMax    Max value for sim normalization.
-   * @param simFieldIndex  Which field in cell.simData to use.
+   * @param simFieldIndex  Retained for API stability; simData already holds the selected field.
    * @param maxLevel  Max AMR level in current snapshot (for level mode normalization).
    */
   forCell(
@@ -58,7 +58,8 @@ export class ColorMapper {
       }
 
       case 'sim': {
-        const val = cell.simData?.[simFieldIndex] ?? 0;
+        void simFieldIndex;
+        const val = ColorMapper.meanSimValue(cell);
         const t = simMax !== simMin ? (val - simMin) / (simMax - simMin) : 0.5;
         hex = sample(colormap, t);
         break;
@@ -81,32 +82,17 @@ export class ColorMapper {
   }
 
   /**
-   * Compute min/max of a sim field across all cells, scanning all subcells.
-   *
-   * When simMeta is provided (patchSize > 1), iterates all subcells using the
-   * correct interleaved layout: Q[sub*(nUnknowns+nAux) + fieldIndex].
-   * Falls back to direct indexing (patchSize=1) when simMeta is null.
+   * Compute min/max across the selected field payload for all cells.
    */
   static simRange(cells: CellRecord[], fieldIndex: number, simMeta: SimMeta | null): [number, number] {
     let min = Infinity, max = -Infinity;
 
-    if (simMeta !== null && simMeta.patchSize > 1) {
-      const N = simMeta.nUnknowns + simMeta.nAux;
-      for (const c of cells) {
-        if (!c.simData) continue;
-        const nSubs = Math.floor(c.simData.length / N);
-        for (let sub = 0; sub < nSubs; sub++) {
-          const v = c.simData[sub * N + fieldIndex];
-          if (v !== undefined && isFinite(v)) {
-            if (v < min) min = v;
-            if (v > max) max = v;
-          }
-        }
-      }
-    } else {
-      for (const c of cells) {
-        const v = c.simData?.[fieldIndex];
-        if (v !== undefined && isFinite(v)) {
+    void fieldIndex;
+    void simMeta;
+    for (const c of cells) {
+      if (!c.simData) continue;
+      for (const v of c.simData) {
+        if (isFinite(v)) {
           if (v < min) min = v;
           if (v > max) max = v;
         }
@@ -117,5 +103,12 @@ export class ColorMapper {
     if (!isFinite(max)) max = 1;
     if (min === max) max = min + 1;
     return [min, max];
+  }
+
+  static meanSimValue(cell: CellRecord): number {
+    if (!cell.simData || cell.simData.length === 0) return 0;
+    let sum = 0;
+    for (const value of cell.simData) sum += value;
+    return sum / cell.simData.length;
   }
 }

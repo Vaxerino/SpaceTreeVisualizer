@@ -7,9 +7,11 @@ import { createRestRouter } from './RestApiRouter';
 
 const TCP_PORT  = parseInt(process.env['STV_TCP_PORT']  ?? '7421', 10);
 const HTTP_PORT = parseInt(process.env['STV_HTTP_PORT'] ?? '7422', 10);
+const MAX_SNAPSHOTS = parseInt(process.env['STV_MAX_SNAPSHOTS'] ?? '200', 10);
+const MAX_SIM_SNAPSHOTS = parseInt(process.env['STV_MAX_SIM_SNAPSHOTS'] ?? '10', 10);
 
 // --- Shared store ---
-const store = new SpaceTreeStore(200);
+const store = new SpaceTreeStore(MAX_SNAPSHOTS, MAX_SIM_SNAPSHOTS);
 
 // --- TCP server (receives from C++ spacetrees) ---
 const tcpServer = new TCPServer(store, TCP_PORT);

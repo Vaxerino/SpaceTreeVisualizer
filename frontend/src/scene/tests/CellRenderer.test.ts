@@ -109,19 +109,16 @@ describe('CellRenderer.passesFilter', () => {
   it('expands into PATCH_SIZE^3 subcell instances per AMR cell in sim mode', () => {
     const renderer = new CellRenderer(new THREE.Scene());
     const PATCH_SIZE = 3;
-    const N_UNKNOWNS = 5;
-    const N_AUX = 0;
-    const N_TOTAL = N_UNKNOWNS + N_AUX;
     const nSubs = PATCH_SIZE ** 3; // 27 subcells per 3D cell
 
-    // Build a diagonal-gradient patch
+    // Build a selected-field-only diagonal-gradient patch
     const simData: number[] = [];
     const denom = 3 * (PATCH_SIZE - 1);
     for (let iz = 0; iz < PATCH_SIZE; iz++) {
       for (let iy = 0; iy < PATCH_SIZE; iy++) {
         for (let ix = 0; ix < PATCH_SIZE; ix++) {
           const diag = (ix + iy + iz) / denom;
-          for (let u = 0; u < N_TOTAL; u++) simData.push(diag + u * 0.01);
+          simData.push(diag);
         }
       }
     }
@@ -137,7 +134,7 @@ describe('CellRenderer.passesFilter', () => {
       'turbo',
       0, // fieldIndex = rho
       1,
-      { patchSize: PATCH_SIZE, nUnknowns: N_UNKNOWNS, nAux: N_AUX, unknownNames: null },
+      { patchSize: PATCH_SIZE, nUnknowns: 5, nAux: 0, unknownNames: null },
     );
 
     // 1 AMR cell × 27 subcells = 27 instances
@@ -146,6 +143,35 @@ describe('CellRenderer.passesFilter', () => {
     for (let i = 0; i < nSubs; i++) {
       expect(renderer.getCellAt(i)).toBe(cells[0]);
     }
+
+    renderer.dispose();
+  });
+
+  it('falls back to per-cell rendering when subcells exceed the instance cap', () => {
+    const renderer = new CellRenderer(new THREE.Scene());
+    const PATCH_SIZE = 16;
+    const cells = Array.from({ length: 2000 }, (_, i) =>
+      makeCell({
+        cx: i,
+        level: 1,
+        flags: CELL_FLAG_IS_LOCAL,
+        hz: 0,
+        simData: Array.from({ length: PATCH_SIZE ** 2 }, () => 1),
+      }),
+    );
+
+    renderer.updateFromSnapshot(
+      cells,
+      makeFilter({ level: 1 }),
+      'sim',
+      'turbo',
+      0,
+      1,
+      { patchSize: PATCH_SIZE, nUnknowns: 4, nAux: 0, unknownNames: null },
+    );
+
+    expect(renderer.usingSimFallback).toBe(true);
+    expect(renderer.mesh.count).toBe(cells.length);
 
     renderer.dispose();
   });
