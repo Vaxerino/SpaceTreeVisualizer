@@ -105,7 +105,13 @@ export class ColorMapper {
   static meanSimValue(cell: CellRecord): number {
     if (!cell.simData || cell.simData.length === 0) return 0;
     let sum = 0;
-    for (const value of cell.simData) sum += value;
-    return sum / cell.simData.length;
+    let count = 0;
+    for (const value of cell.simData) {
+      if (isFinite(value)) {
+        sum += value;
+        count++;
+      }
+    }
+    return count === 0 ? 0 : sum / count;
   }
 }

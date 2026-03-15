@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WebSocketClient } from '../../WebSocketClient';
 import type { StepSnapshot } from '../../types';
 
@@ -116,6 +116,10 @@ beforeEach(() => {
   // Replace the global WebSocket constructor so WebSocketClient connects
   // to our mock instead of a real server.
   vi.stubGlobal('WebSocket', vi.fn().mockImplementation(() => mockWs));
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 /**

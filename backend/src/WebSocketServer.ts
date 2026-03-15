@@ -91,7 +91,7 @@ export class WebSocketServer {
         const snapshot = this.store.getSnapshot(stepIndex)
           ?? this.store.getLatestSnapshot();
         if (snapshot) {
-          this.sendSnapshot(ws, state, snapshot);
+          this.sendSnapshot(ws, state, snapshot, false);
         } else {
           this.send(ws, { type: 'snapshot_data', stepIndex: -1, cells: [], faces: [], vertices: [] });
         }
@@ -101,7 +101,7 @@ export class WebSocketServer {
       case 'get_latest': {
         const snapshot = this.store.getLatestSnapshot();
         if (snapshot) {
-          this.sendSnapshot(ws, state, snapshot);
+          this.sendSnapshot(ws, state, snapshot, false);
         }
         break;
       }
@@ -180,13 +180,13 @@ export class WebSocketServer {
     if (!liveSnapshot) return;
     const viewKey = this.viewKey(state);
     if (liveSnapshot.stepIndex === state.lastSentStepIndex && viewKey === state.lastSentViewKey) return;
-    this.sendSnapshot(ws, state, liveSnapshot);
+    this.sendSnapshot(ws, state, liveSnapshot, true);
   }
 
-  private sendSnapshot(ws: WebSocket, state: ClientState, snapshot: StepSnapshot): void {
+  private sendSnapshot(ws: WebSocket, state: ClientState, snapshot: StepSnapshot, live: boolean): void {
     const simMeta = this.store.getSimMeta();
     const serialized = serializeSnapshot(snapshot, state.includeSimData ? state.simFieldIndex : null, simMeta);
-    state.snapshotInFlight = true;
+    state.snapshotInFlight = live;
     state.lastSentStepIndex = snapshot.stepIndex;
     state.lastSentViewKey = this.viewKey(state);
     this.send(ws, { type: 'snapshot_data', ...serialized.json });
