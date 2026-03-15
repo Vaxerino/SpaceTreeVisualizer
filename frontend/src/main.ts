@@ -131,6 +131,38 @@ function snapshotMatchesCurrentView(snap: StepSnapshot): boolean {
   return snap.simFieldIndex === AppState.simFieldIndex;
 }
 
+/**
+ * REST snapshots carry interleaved full-patch data: PS³ × nTotalFields floats
+ * per cell (subcell-major, field-minor), matching the raw C++ wire format.
+ * WS snapshots carry single-field data: PS³ floats per cell, already extracted
+ * by the backend for the requested simFieldIndex.
+ *
+ * Detect and de-interleave REST cells so _updateSubcells always receives PS³
+ * values for the currently selected field.
+ */
+function extractSimFieldIfNeeded(cells: CellRecord[]): CellRecord[] {
+  const simMeta = AppState.simMeta;
+  if (!simMeta || AppState.colorMode !== 'sim') return cells;
+  const totalFields = simMeta.nUnknowns + simMeta.nAux;
+  if (totalFields <= 1) return cells;
+
+  return cells.map(cell => {
+    if (!cell.simData) return cell;
+    const is2D = cell.hz < 0.0001;
+    const ps = simMeta.patchSize;
+    const singleFieldLen = is2D ? ps * ps : ps * ps * ps;
+    if (cell.simData.length === singleFieldLen) return cell; // already single-field (WS)
+    if (cell.simData.length !== singleFieldLen * totalFields) return cell; // unexpected
+    const data = cell.simData as ArrayLike<number>;
+    const fi = AppState.simFieldIndex;
+    const extracted: number[] = new Array(singleFieldLen);
+    for (let i = 0; i < singleFieldLen; i++) {
+      extracted[i] = data[i * totalFields + fi] ?? 0;
+    }
+    return { ...cell, simData: extracted };
+  });
+}
+
 function clearLiveView(): void {
   currentSnapshot = null;
   cellRenderer.updateFromSnapshot(
@@ -156,7 +188,7 @@ function reapplyFilter(): void {
   if (!snapshotMatchesCurrentView(currentSnapshot)) {
     return;
   }
-  const cells = currentSnapshot.cells;
+  const cells = extractSimFieldIfNeeded(currentSnapshot.cells);
   cellRenderer.updateFromSnapshot(
     cells,
     AppState.filter,
@@ -229,7 +261,7 @@ async function displayHistoricalSnapshot(snap: StepSnapshot): Promise<void> {
   if (AppState.simMeta === null) {
     await fetchAndApplyMeta();
   }
-  const cells = snap.cells;
+  const cells = extractSimFieldIfNeeded(snap.cells);
   cellRenderer.updateFromSnapshot(
     cells,
     AppState.filter,
