@@ -2,6 +2,10 @@ import type { CellRecord, ColorMode, ColormapName, FilterSpec, SnapshotSummary }
 
 type Listener = () => void;
 
+/**
+ * Simple reactive state store. Components subscribe with onChange() and
+ * re-render when state changes via setState().
+ */
 class AppStateStore {
   currentStep: number = -1;
   isLive: boolean = true;
@@ -12,7 +16,7 @@ class AppStateStore {
 
   colorMode: ColorMode = 'level';
   colormap: ColormapName = 'turbo';
-  filter: FilterSpec = { level: 4, levelCumulative: true, showLocal: true, showRemote: true };
+  filter: FilterSpec = { level: 12, levelCumulative: true, showLocal: true, showRemote: true };
   simFieldIndex: number = 0;
 
   selectedCell: CellRecord | null = null;
