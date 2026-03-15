@@ -8,9 +8,12 @@ type Listener = () => void;
  */
 class AppStateStore {
   currentStep: number = -1;
-  isLive: boolean = true;
+  viewMode: 'live' | 'playing' | 'historical' = 'live';
   isPaused: boolean = false;
+  hasPauseMode: boolean = false;
+  autoAdvanceSim: boolean = false;
   totalSteps: number = 0;
+  currentSummaryIndex: number = -1;
   summaries: SnapshotSummary[] = [];
   registeredTrees: string[] = [];
 
