@@ -36,8 +36,10 @@ export interface CellRecord {
   // Source info
   rank: number;
   treeId: number;
-  // Optional simulation data (raw doubles, length = unknowns * patch_volumes)
-  simData?: number[];
+  // Optional raw per-cell simulation payload parsed from TCP.
+  // For patch data this is still the full interleaved field array.
+  simData?: Float32Array;
+  simDataLength?: number;
 }
 
 export interface FaceRecord {
@@ -68,6 +70,9 @@ export interface StepSnapshot {
   vertices: VertexRecord[];
   treeIds: string[];    // which trees contributed
   cellCount: number;
+  simFieldIndex?: number;
+  /** True if at least one cell in this snapshot carries simData. Set at commit time; cleared by pruneHistoricalSimData when sim data is dropped. */
+  hasSimData?: boolean;
 }
 
 /** Summary entry used in snapshot list responses. */

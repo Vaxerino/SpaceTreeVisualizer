@@ -46,6 +46,7 @@ export class TCPServer {
     let handshakeBuffer: Buffer = Buffer.alloc(0);
     let parser: ProtocolParser | null = null;
     let conn: TreeConnection | null = null;
+    let finalized = false;
 
     socket.on('data', (chunk: Buffer) => {
       if (parser) {
@@ -90,6 +91,10 @@ export class TCPServer {
         patchSize, nUnknowns, nAux,
       };
 
+      if (this.store.continueSenders.size === 0 && this.store.hasRetainedRunState()) {
+        this.store.resetForNewRun();
+      }
+
       this.store.setSimMeta(patchSize, nUnknowns, nAux);
 
       console.log(`[tcp] ${addr}: handshake ok — tree ${conn.key}, dims=${dims}, ` +
@@ -116,18 +121,22 @@ export class TCPServer {
       }
     });
 
-    socket.on('end', () => {
-      console.log(`[tcp] ${addr} disconnected`);
+    const finalize = (reason: 'disconnected' | 'error', message?: string) => {
+      if (finalized) return;
+      finalized = true;
+      if (reason === 'error') {
+        console.error(`[tcp] ${addr} error:`, message ?? 'unknown error');
+      } else {
+        console.log(`[tcp] ${addr} disconnected`);
+      }
       if (conn) {
         this.store.continueSenders.delete(conn.key);
+        this.store.unregisterTree(conn.key);
       }
-    });
+    };
 
-    socket.on('error', err => {
-      console.error(`[tcp] ${addr} error:`, err.message);
-      if (conn) {
-        this.store.continueSenders.delete(conn.key);
-      }
-    });
+    socket.on('end', () => finalize('disconnected'));
+    socket.on('close', () => finalize('disconnected'));
+    socket.on('error', err => finalize('error', err.message));
   }
 }

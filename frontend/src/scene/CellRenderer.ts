@@ -25,9 +25,11 @@ export class CellRenderer {
   private readonly dummy = new THREE.Object3D();
   private readonly mapper = new ColorMapper();
   private currentCells: CellRecord[] = [];
+  private warnedSimFallback = false;
 
   /** Set after every updateFromSnapshot call in 'sim' mode; [0,1] otherwise. */
   lastSimRange: [number, number] = [0, 1];
+  usingSimFallback = false;
 
   constructor(scene: THREE.Scene) {
     const geo = new THREE.BoxGeometry(1, 1, 1);
@@ -60,17 +62,31 @@ export class CellRenderer {
     simMeta: SimMeta | null,
   ): void {
     const useSubcells = colorMode === 'sim' && simMeta !== null && simMeta.patchSize > 1;
+    const shouldFallbackToCells = useSubcells && this.estimatedSubcellInstances(cells, filter, simMeta!) > MAX_INSTANCES;
 
     const [simMin, simMax] = colorMode === 'sim'
       ? ColorMapper.simRange(cells, simFieldIndex, simMeta)
       : [0, 1];
     this.lastSimRange = [simMin, simMax];
+    this.usingSimFallback = shouldFallbackToCells;
+
+    if (shouldFallbackToCells) {
+      const estimated = this.estimatedSubcellInstances(cells, filter, simMeta!);
+      if (!this.warnedSimFallback) {
+        console.warn(
+          `[CellRenderer] subcell render requires ${estimated} instances; falling back to per-cell coloring at cap ${MAX_INSTANCES}.`,
+        );
+        this.warnedSimFallback = true;
+      }
+    } else {
+      this.warnedSimFallback = false;
+    }
 
     let count = 0;
     this.currentCells = [];
 
-    if (useSubcells) {
-      count = this._updateSubcells(cells, filter, colormap, simFieldIndex, simMin, simMax, simMeta!);
+    if (useSubcells && !shouldFallbackToCells) {
+      count = this._updateSubcells(cells, filter, colormap, simMin, simMax, simMeta!);
     } else {
       count = this._updateCells(cells, filter, colorMode, colormap, simFieldIndex, simMin, simMax, maxLevel);
     }
@@ -116,7 +132,7 @@ export class CellRenderer {
    *
    * Each subcell is positioned within the gapped extent of the AMR cell
    * (h * CELL_GAP), tiled flush edge-to-edge within that area.
-   * Colors come from the correct subcell index in the interleaved simData array.
+   * Colors come from the selected-field payload, one float per subcell.
    *
    * For 3D cells (hz > 0), all PS^3 subcells are emitted as small 3D boxes
    * (naive — culling of z-occluded subcells is a future optimisation).
@@ -126,13 +142,11 @@ export class CellRenderer {
     cells: CellRecord[],
     filter: FilterSpec,
     colormap: ColormapName,
-    simFieldIndex: number,
     simMin: number,
     simMax: number,
     simMeta: SimMeta,
   ): number {
     const PS = simMeta.patchSize;
-    const N = simMeta.nUnknowns + simMeta.nAux;
     const color = new THREE.Color();
     let count = 0;
 
@@ -170,7 +184,7 @@ export class CellRenderer {
             this.mesh.setMatrixAt(count, this.dummy.matrix);
 
             const linearIdx = ix + PS * (iy + PS * iz);
-            const val = c.simData[linearIdx * N + simFieldIndex] ?? 0;
+            const val = c.simData[linearIdx] ?? 0;
             const t = simMax !== simMin ? (val - simMin) / (simMax - simMin) : 0.5;
             this.mesh.setColorAt(count, color.set(sample(colormap, t)));
 
@@ -181,6 +195,17 @@ export class CellRenderer {
       }
     }
     return count;
+  }
+
+  private estimatedSubcellInstances(cells: CellRecord[], filter: FilterSpec, simMeta: SimMeta): number {
+    let total = 0;
+    const perCell2D = simMeta.patchSize ** 2;
+    const perCell3D = simMeta.patchSize ** 3;
+    for (const cell of cells) {
+      if (!this.passesFilter(cell, filter) || !cell.simData) continue;
+      total += cell.hz < 0.0001 ? perCell2D : perCell3D;
+    }
+    return total;
   }
 
   /** Get the CellRecord for a given instance index (set by last updateFromSnapshot). */

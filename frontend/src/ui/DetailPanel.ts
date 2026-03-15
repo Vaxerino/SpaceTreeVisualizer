@@ -29,7 +29,7 @@ export class DetailPanel {
     const fmt = (v: number) => v.toFixed(6);
 
     const simRows = cell.simData
-      ? cell.simData.slice(0, 8).map((v, i) =>
+      ? Array.from(cell.simData.slice(0, 8)).map((v, i) =>
           `<tr><td class="mono small">field[${i}]</td><td class="mono small right">${v.toExponential(4)}</td></tr>`
         ).join('')
       : '';

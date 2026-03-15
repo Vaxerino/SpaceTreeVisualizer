@@ -3,7 +3,7 @@ import { CellRenderer } from './scene/CellRenderer';
 import { SelectionHighlight } from './scene/SelectionHighlight';
 import { PickingHelper } from './scene/PickingHelper';
 import { WebSocketClient } from './WebSocketClient';
-import { SnapshotCache, BACKEND } from './store/SnapshotCache';
+import { BACKEND } from './store/SnapshotCache';
 import { AppState } from './store/AppState';
 import { ControlPanel } from './ui/ControlPanel';
 import { DetailPanel } from './ui/DetailPanel';
@@ -56,9 +56,11 @@ picker.onPick(id => {
 // --- Current snapshot ---
 let currentSnapshot: StepSnapshot | null = null;
 let cameraOriented = false;
+let displayInProgress = false;
 
 /** Fetch /api/meta and update AppState + ControlPanel. No-op if backend has no meta yet. */
 async function fetchAndApplyMeta(): Promise<void> {
+  if (AppState.simMeta !== null) return;
   try {
     const res = await fetch(`${BACKEND}/api/meta`);
     if (!res.ok) return; // 404 = no simulation connected yet
@@ -103,8 +105,37 @@ function updateColorbar(cells: CellRecord[], mode: ColorMode): void {
   }
 }
 
+function snapshotMatchesCurrentView(snap: StepSnapshot): boolean {
+  if (AppState.colorMode !== 'sim') return true;
+  return snap.simFieldIndex === AppState.simFieldIndex;
+}
+
+function clearLiveView(): void {
+  currentSnapshot = null;
+  cellRenderer.updateFromSnapshot(
+    [],
+    AppState.filter,
+    AppState.colorMode,
+    AppState.colormap,
+    AppState.simFieldIndex,
+    0,
+    AppState.simMeta,
+  );
+  colorbar.hide();
+  highlight.hide();
+  detail.showEmpty();
+  status.setDisconnected();
+  timeline.setInfo('LIVE');
+}
+
 function reapplyFilter(): void {
+  if (AppState.colorMode === 'sim' && (!currentSnapshot || !snapshotMatchesCurrentView(currentSnapshot))) {
+    syncLiveViewState();
+  }
   if (!currentSnapshot) return;
+  if (!snapshotMatchesCurrentView(currentSnapshot)) {
+    return;
+  }
   const cells = currentSnapshot.cells;
   cellRenderer.updateFromSnapshot(
     cells,
@@ -120,69 +151,107 @@ function reapplyFilter(): void {
   detail.showEmpty();
 }
 
-async function loadAndDisplay(stepIndex: number): Promise<void> {
-  const snap = await SnapshotCache.get(stepIndex);
-  if (!snap) return;
-  currentSnapshot = snap;
-  orientCameraIfNeeded(snap);
-  // Fetch meta lazily — cheap no-op once already loaded
-  if (AppState.simMeta === null) {
-    await fetchAndApplyMeta();
+function syncLiveViewState(): void {
+  ws.send({
+    type: 'set_view',
+    colorMode: AppState.colorMode,
+    simFieldIndex: AppState.simFieldIndex,
+  });
+}
+
+async function displaySnapshot(snap: StepSnapshot): Promise<void> {
+  // Re-entrancy guard: if a previous displaySnapshot call is still awaiting
+  // fetchAndApplyMeta(), do NOT send snapshot_consumed — the backend's
+  // snapshotInFlight flag must stay set until the current render finishes.
+  if (displayInProgress) return;
+  if (!snapshotMatchesCurrentView(snap)) {
+    // Send snapshot_consumed even on mismatch so the backend clears its
+    // snapshotInFlight flag and can push the correct snapshot for the current view.
+    ws.send({ type: 'snapshot_consumed', stepIndex: snap.stepIndex });
+    syncLiveViewState();
+    return;
   }
-  const cells = snap.cells;
-  cellRenderer.updateFromSnapshot(
-    cells,
-    AppState.filter,
-    AppState.colorMode,
-    AppState.colormap,
-    AppState.simFieldIndex,
-    getMaxLevel(cells),
-    AppState.simMeta,
-  );
-  updateColorbar(cells, AppState.colorMode);
-  status.setLive(snap.stepIndex, snap.cellCount);
-  timeline.setInfo(`LIVE  step ${snap.stepIndex}  ${snap.cellCount} cells`);
+  try {
+    displayInProgress = true;
+    currentSnapshot = snap;
+    orientCameraIfNeeded(snap);
+    if (AppState.simMeta === null) {
+      await fetchAndApplyMeta();
+    }
+    const cells = snap.cells;
+    cellRenderer.updateFromSnapshot(
+      cells,
+      AppState.filter,
+      AppState.colorMode,
+      AppState.colormap,
+      AppState.simFieldIndex,
+      getMaxLevel(cells),
+      AppState.simMeta,
+    );
+    updateColorbar(cells, AppState.colorMode);
+    status.setLive(snap.stepIndex, snap.cellCount);
+    timeline.setInfo(`LIVE  step ${snap.stepIndex}  ${snap.cellCount} cells`);
+    ws.send({ type: 'snapshot_consumed', stepIndex: snap.stepIndex });
+  } finally {
+    displayInProgress = false;
+  }
 }
 
 // --- WebSocket ---
 const ws = new WebSocketClient('ws://localhost:7422');
 
 ws.on('status', (msg) => {
-  const trees = (msg['trees'] as string[]) ?? [];
+  const statusMsg = msg as Record<string, unknown>;
+  const trees = (statusMsg['trees'] as string[]) ?? [];
   controls.updateTreeList(trees);
   AppState.setState({ registeredTrees: trees });
 
-  const paused = msg['paused'] as boolean;
+  const paused = statusMsg['paused'] as boolean;
   timeline.setPaused(paused);
 
-  const liveStep = msg['liveStep'] as number;
+  const liveStep = statusMsg['liveStep'] as number;
   if (liveStep >= 0) {
-    void loadAndDisplay(liveStep);
+    syncLiveViewState();
   }
 });
 
 ws.on('step_committed', (msg) => {
-  const stepIndex = msg['stepIndex'] as number;
-  if (AppState.isLive) {
-    void loadAndDisplay(stepIndex);
-  }
+  const stepIndex = (msg as Record<string, unknown>)['stepIndex'] as number;
   AppState.setState({
     totalSteps: AppState.totalSteps + 1,
     currentStep: stepIndex,
   });
 });
 
+ws.on('snapshot_data', (msg) => {
+  void displaySnapshot(msg as StepSnapshot);
+});
+
+ws.on('simulation_reset', () => {
+  AppState.setState({
+    currentStep: -1,
+    totalSteps: 0,
+    registeredTrees: [],
+    simMeta: null,
+    selectedCell: null,
+    selectedInstanceIndex: -1,
+  });
+  controls.updateTreeList([]);
+  controls.updateSimMeta(null);
+  clearLiveView();
+});
+
 timeline.onContinue(() => {
   ws.send({ type: 'continue' });
 });
 
-// Attempt to load latest snapshot on startup
-void loadAndDisplay(-1);
+syncLiveViewState();
 
 // Expose a minimal debug handle for Playwright integration tests.
 // Gives tests read-only access to renderer internals without modifying the
 // production rendering path.
 (window as unknown as Record<string, unknown>)['__STV_DEBUG__'] = {
   get instanceCount() { return cellRenderer.mesh.count; },
+  get usingSimFallback() { return cellRenderer.usingSimFallback; },
   get simMeta() { return AppState.simMeta; },
 };

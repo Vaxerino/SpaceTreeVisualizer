@@ -110,16 +110,31 @@ class SpaceTreeVisualizerActionSet(ActionSet):
         Return a list of byte values encoding the NUL-separated unknown names.
         E.g. ["rho", "vx"] → [114,104,111, 0, 118,120].
         Returns [] (no metadata frame) if names are unavailable.
+
+        Uses plot_description ({name: count}) to expand multi-component groups
+        into per-component names (e.g. "rhoU": 3 → "rhoU0", "rhoU1", "rhoU2"),
+        so that the name count matches nUnknowns exactly.
         """
         names = []
         try:
             vs = self._solver._variable_shortcuts
-            # Try common attribute names used by ExaHype2 solver introspection
-            for attr in ("names", "unknown_names", "variable_names"):
-                candidate = getattr(vs, attr, None)
-                if candidate:
-                    names = [str(n) for n in candidate]
-                    break
+            plot_desc = getattr(vs, 'plot_description', None)
+            if plot_desc:
+                expanded = []
+                for name, count in plot_desc.items():
+                    if count == 1:
+                        expanded.append(str(name))
+                    else:
+                        for i in range(count):
+                            expanded.append(f"{name}{i}")
+                n_unknowns = getattr(vs, 'unknowns', len(expanded))
+                names = expanded[:n_unknowns]
+            else:
+                for attr in ("names", "unknown_names", "variable_names"):
+                    candidate = getattr(vs, attr, None)
+                    if candidate:
+                        names = [str(n) for n in candidate]
+                        break
         except AttributeError:
             pass
         if not names:

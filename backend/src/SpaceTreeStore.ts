@@ -1,6 +1,7 @@
 import type { CellRecord, StepSnapshot, SnapshotSummary, SimMeta } from './types';
 
 export type StepCommittedCallback = (snapshot: StepSnapshot) => void;
+export type StoreResetCallback = () => void;
 
 /**
  * In-memory store for all received grid data.
@@ -13,12 +14,15 @@ export class SpaceTreeStore {
   /** Ring buffer of committed snapshots, newest at the end. */
   private snapshots: StepSnapshot[] = [];
   private maxSnapshots: number;
+  private maxSimSnapshots: number;
 
   /** Simulation patch metadata (set from the first connecting tree's handshake). */
   private simMeta: SimMeta | null = null;
 
   /** Tree keys registered at TCP handshake time. */
   private registeredTrees: Set<string> = new Set();
+  /** Stable set of trees expected to participate in each committed step after startup. */
+  private expectedTrees: Set<string> | null = null;
   /** Step indices that have already been committed (prevents duplicate commits). */
   private committedSteps: Set<number> = new Set();
 
@@ -39,22 +43,70 @@ export class SpaceTreeStore {
   private pendingTimestamps: Map<number, number> = new Map();
   /** Trees that have sent STEP_END for each step. */
   private pendingEnded: Map<number, Set<string>> = new Map();
+  /** Steps whose grace period has elapsed and are ready to commit in order. */
+  private readySteps: Set<number> = new Set();
+  private nextCommitStep: number | null = null;
 
   /** Trees that have sent PAUSE_ACK for the current step. */
   private pausedTrees: Set<string> = new Set();
 
   private onCommitCallbacks: StepCommittedCallback[] = [];
+  private onResetCallbacks: StoreResetCallback[] = [];
 
   /** Socket fd for sending CONTINUE to paused trees (set by TCPServer). */
   continueSenders: Map<string, () => void> = new Map();
 
-  constructor(maxSnapshots = 200) {
+  constructor(maxSnapshots = 200, maxSimSnapshots = 10) {
     this.maxSnapshots = maxSnapshots;
+    this.maxSimSnapshots = maxSimSnapshots;
   }
 
   /** Register a tree at TCP handshake time (before any STEP_BEGIN). */
   registerTree(key: string): void {
     this.registeredTrees.add(key);
+    // NOTE: if a new-run tree connects before resetForNewRun fires (a race window
+    // exists when continueSenders is non-empty between the old run ending and the
+    // new run detection), it will be added to expectedTrees and may block commits
+    // indefinitely. TCPServer's continueSenders.size===0 guard is the primary
+    // defense against this; the reset path clears expectedTrees on new-run detection.
+    if (this.expectedTrees !== null) {
+      this.expectedTrees.add(key);
+    }
+  }
+
+  unregisterTree(key: string): void {
+    const removedRegistered = this.registeredTrees.delete(key);
+    const removedExpected = this.expectedTrees?.delete(key) ?? false;
+    this.pausedTrees.delete(key);
+    if (!removedRegistered && !removedExpected) return;
+
+    for (const [stepIndex, stepMap] of this.pending.entries()) {
+      const ended = this.pendingEnded.get(stepIndex);
+      stepMap.delete(key);
+      ended?.delete(key);
+      if (stepMap.size === 0) {
+        this.pending.delete(stepIndex);
+        this.pendingTimestamps.delete(stepIndex);
+        this.pendingEnded.delete(stepIndex);
+        this.readySteps.delete(stepIndex);
+        const timer = this.pendingCommitTimers.get(stepIndex);
+        if (timer !== undefined) {
+          clearTimeout(timer);
+          this.pendingCommitTimers.delete(stepIndex);
+        }
+        continue;
+      }
+
+      if (ended && this.stepHasAllExpectedTrees(stepIndex, stepMap, ended)) {
+        this.scheduleReadyCheck(stepIndex);
+      }
+    }
+
+    if (this.nextCommitStep !== null && !this.pending.has(this.nextCommitStep) && !this.readySteps.has(this.nextCommitStep)) {
+      const candidateIndices = [...this.pending.keys(), ...this.readySteps.values()].filter(i => !this.committedSteps.has(i));
+      this.nextCommitStep = candidateIndices.length > 0 ? Math.min(...candidateIndices) : null;
+    }
+    this.flushReadySteps();
   }
 
   /** Record patch metadata from a connecting tree's handshake. First writer wins. */
@@ -80,10 +132,48 @@ export class SpaceTreeStore {
     this.onCommitCallbacks.push(cb);
   }
 
+  onReset(cb: StoreResetCallback): void {
+    this.onResetCallbacks.push(cb);
+  }
+
+  hasRetainedRunState(): boolean {
+    return this.snapshots.length > 0
+      || this.pending.size > 0
+      || this.committedSteps.size > 0
+      || this.registeredTrees.size > 0
+      || this.simMeta !== null;
+  }
+
+  resetForNewRun(): void {
+    for (const timer of this.pendingCommitTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingCommitTimers.clear();
+    this.snapshots = [];
+    this.pending.clear();
+    this.pendingTimestamps.clear();
+    this.pendingEnded.clear();
+    this.readySteps.clear();
+    this.nextCommitStep = null;
+    this.committedSteps.clear();
+    this.pausedTrees.clear();
+    this.registeredTrees.clear();
+    this.expectedTrees = null;
+    this.simMeta = null;
+
+    console.log('[store] reset retained state for new simulation run');
+    for (const cb of this.onResetCallbacks) {
+      cb();
+    }
+  }
+
   onStepBegin(treeKey: string, stepIndex: number, timestamp: number): void {
     this.registeredTrees.add(treeKey);
     // Ignore STEP_BEGIN for steps we already committed (late-arriving trees in step 0).
     if (this.committedSteps.has(stepIndex)) return;
+    if (this.nextCommitStep === null || stepIndex < this.nextCommitStep) {
+      this.nextCommitStep = stepIndex;
+    }
     if (!this.pending.has(stepIndex)) {
       this.pending.set(stepIndex, new Map());
       this.pendingTimestamps.set(stepIndex, timestamp);
@@ -114,27 +204,9 @@ export class SpaceTreeStore {
 
     ended.add(treeKey);
 
-    const beganKeys = [...stepMap.keys()];
-    if (beganKeys.length === 0) return;
+    if (!this.stepHasAllExpectedTrees(stepIndex, stepMap, ended)) return;
 
-    // All trees that began this step must have ended before we can commit.
-    if (!beganKeys.every(k => ended.has(k))) return;
-
-    // All currently-started trees have ended.  Schedule a 30 ms grace period
-    // to allow late-connecting trees to send STEP_BEGIN(N) before we commit.
-    // If a new STEP_BEGIN(N) arrives, onStepBegin() cancels this timer.
-    if (this.pendingCommitTimers.has(stepIndex)) return; // already scheduled
-    const timer = setTimeout(() => {
-      this.pendingCommitTimers.delete(stepIndex);
-      // Re-check: all trees that began this step must have ended.
-      const sm = this.pending.get(stepIndex);
-      const en = this.pendingEnded.get(stepIndex);
-      if (!sm || !en) return;
-      if ([...sm.keys()].every(k => en.has(k))) {
-        this.commitStep(stepIndex);
-      }
-    }, 30);
-    this.pendingCommitTimers.set(stepIndex, timer);
+    this.scheduleReadyCheck(stepIndex);
   }
 
   onPauseAck(treeKey: string): void {
@@ -152,6 +224,40 @@ export class SpaceTreeStore {
 
   isPaused(): boolean {
     return this.pausedTrees.size > 0;
+  }
+
+  private flushReadySteps(): void {
+    if (this.nextCommitStep === null) return;
+
+    while (this.nextCommitStep !== null) {
+      const stepIndex = this.nextCommitStep;
+      if (!this.readySteps.has(stepIndex)) break;
+      this.readySteps.delete(stepIndex);
+      this.commitStep(stepIndex);
+
+      const pendingIndices = [...this.pending.keys()];
+      const readyIndices = [...this.readySteps.values()];
+      const candidateIndices = [...pendingIndices, ...readyIndices].filter(i => !this.committedSteps.has(i));
+      this.nextCommitStep = candidateIndices.length > 0
+        ? Math.min(...candidateIndices)
+        : null;
+    }
+  }
+
+  private scheduleReadyCheck(stepIndex: number): void {
+    // Preserve the 30 ms grace window for late STEP_BEGIN arrivals on startup.
+    if (this.pendingCommitTimers.has(stepIndex)) return;
+    const timer = setTimeout(() => {
+      this.pendingCommitTimers.delete(stepIndex);
+      const sm = this.pending.get(stepIndex);
+      const en = this.pendingEnded.get(stepIndex);
+      if (!sm || !en) return;
+      if (this.stepHasAllExpectedTrees(stepIndex, sm, en)) {
+        this.readySteps.add(stepIndex);
+        this.flushReadySteps();
+      }
+    }, 30);
+    this.pendingCommitTimers.set(stepIndex, timer);
   }
 
   private commitStep(stepIndex: number): void {
@@ -181,18 +287,24 @@ export class SpaceTreeStore {
       vertices: [],
       treeIds: [...stepMap.keys()],
       cellCount: allCells.length,
+      // Check once at commit time rather than on every prune cycle (O(1) amortised).
+      hasSimData: allCells.length > 0 && allCells[0]!.simData !== undefined,
     };
 
     this.snapshots.push(snapshot);
     if (this.snapshots.length > this.maxSnapshots) {
       this.snapshots.shift();
     }
+    this.pruneHistoricalSimData();
 
     this.pending.delete(stepIndex);
     this.pendingTimestamps.delete(stepIndex);
     this.pendingEnded.delete(stepIndex);
 
     console.log(`[store] step ${stepIndex} committed: ${allCells.length} cells from ${snapshot.treeIds.length} tree(s)`);
+    if (this.expectedTrees === null) {
+      this.expectedTrees = new Set(this.registeredTrees);
+    }
 
     for (const cb of this.onCommitCallbacks) {
       cb(snapshot);
@@ -224,4 +336,49 @@ export class SpaceTreeStore {
       ? this.snapshots[this.snapshots.length - 1].stepIndex
       : -1;
   }
+
+  private pruneHistoricalSimData(): void {
+    let snapshotsWithSim = 0;
+    for (let i = this.snapshots.length - 1; i >= 0; i--) {
+      const snapshot = this.snapshots[i]!;
+      if (!snapshot.hasSimData) continue;
+
+      snapshotsWithSim++;
+      if (snapshotsWithSim <= this.maxSimSnapshots) continue;
+
+      for (const cell of snapshot.cells) {
+        if (cell.simData) {
+          cell.simDataLength = cell.simData.length;
+          delete cell.simData;
+        }
+      }
+      delete snapshot.simFieldIndex;
+      snapshot.hasSimData = false;
+    }
+  }
+
+  private stepHasAllExpectedTrees(
+    stepIndex: number,
+    stepMap: Map<string, CellRecord[]>,
+    ended: Set<string>,
+  ): boolean {
+    const expected = this.expectedTreesForStep(stepIndex);
+    if (expected.size === 0) return false;
+    for (const treeKey of expected) {
+      if (!stepMap.has(treeKey) || !ended.has(treeKey)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private expectedTreesForStep(stepIndex: number): Set<string> {
+    // Preserve the original late-connect grace for the first committed step.
+    if (this.expectedTrees === null && this.committedSteps.size === 0) {
+      const current = this.pending.get(stepIndex);
+      return current ? new Set(current.keys()) : new Set();
+    }
+    return this.expectedTrees ?? this.registeredTrees;
+  }
+
 }
