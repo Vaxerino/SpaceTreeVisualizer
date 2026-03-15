@@ -79,6 +79,7 @@ export class ControlPanel {
     // Sync select and visibility to current AppState on initial render
     const colorModeEl = this.el.querySelector('#colorMode') as HTMLSelectElement;
     colorModeEl.value = AppState.colorMode;
+    (this.el.querySelector('#colormap') as HTMLSelectElement).value = AppState.colormap;
     colormapRow.style.display = AppState.colorMode === 'treeId' ? 'none' : '';
     simFieldRow.style.display = AppState.colorMode === 'sim' ? '' : 'none';
 
