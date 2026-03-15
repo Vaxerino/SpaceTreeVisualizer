@@ -21,6 +21,8 @@ export class SpaceTreeStore {
 
   /** Tree keys registered at TCP handshake time. */
   private registeredTrees: Set<string> = new Set();
+  /** Stable set of trees expected to participate in each committed step after startup. */
+  private expectedTrees: Set<string> | null = null;
   /** Step indices that have already been committed (prevents duplicate commits). */
   private committedSteps: Set<number> = new Set();
 
@@ -62,6 +64,9 @@ export class SpaceTreeStore {
   /** Register a tree at TCP handshake time (before any STEP_BEGIN). */
   registerTree(key: string): void {
     this.registeredTrees.add(key);
+    if (this.expectedTrees !== null) {
+      this.expectedTrees.add(key);
+    }
   }
 
   /** Record patch metadata from a connecting tree's handshake. First writer wins. */
@@ -113,6 +118,7 @@ export class SpaceTreeStore {
     this.committedSteps.clear();
     this.pausedTrees.clear();
     this.registeredTrees.clear();
+    this.expectedTrees = null;
     this.simMeta = null;
 
     console.log('[store] reset retained state for new simulation run');
@@ -158,11 +164,7 @@ export class SpaceTreeStore {
 
     ended.add(treeKey);
 
-    const beganKeys = [...stepMap.keys()];
-    if (beganKeys.length === 0) return;
-
-    // All trees that began this step must have ended before we can commit.
-    if (!beganKeys.every(k => ended.has(k))) return;
+    if (!this.stepHasAllExpectedTrees(stepIndex, stepMap, ended)) return;
 
     // All currently-started trees have ended.  Schedule a 30 ms grace period
     // to allow late-connecting trees to send STEP_BEGIN(N) before we commit.
@@ -174,7 +176,7 @@ export class SpaceTreeStore {
       const sm = this.pending.get(stepIndex);
       const en = this.pendingEnded.get(stepIndex);
       if (!sm || !en) return;
-      if ([...sm.keys()].every(k => en.has(k))) {
+      if (this.stepHasAllExpectedTrees(stepIndex, sm, en)) {
         this.readySteps.add(stepIndex);
         this.flushReadySteps();
       }
@@ -257,6 +259,9 @@ export class SpaceTreeStore {
     this.pendingEnded.delete(stepIndex);
 
     console.log(`[store] step ${stepIndex} committed: ${allCells.length} cells from ${snapshot.treeIds.length} tree(s)`);
+    if (this.expectedTrees === null) {
+      this.expectedTrees = new Set(this.registeredTrees);
+    }
 
     for (const cb of this.onCommitCallbacks) {
       cb(snapshot);
@@ -307,5 +312,29 @@ export class SpaceTreeStore {
       }
       delete snapshot.simFieldIndex;
     }
+  }
+
+  private stepHasAllExpectedTrees(
+    stepIndex: number,
+    stepMap: Map<string, CellRecord[]>,
+    ended: Set<string>,
+  ): boolean {
+    const expected = this.expectedTreesForStep(stepIndex);
+    if (expected.size === 0) return false;
+    for (const treeKey of expected) {
+      if (!stepMap.has(treeKey) || !ended.has(treeKey)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private expectedTreesForStep(stepIndex: number): Set<string> {
+    // Preserve the original late-connect grace for the first committed step.
+    if (this.expectedTrees === null && this.committedSteps.size === 0) {
+      const current = this.pending.get(stepIndex);
+      return current ? new Set(current.keys()) : new Set();
+    }
+    return this.expectedTrees ?? this.registeredTrees;
   }
 }
