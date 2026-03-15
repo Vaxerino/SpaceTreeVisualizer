@@ -8,7 +8,7 @@ class SnapshotCacheStore {
   private cache: Map<number, StepSnapshot> = new Map();
   private order: number[] = [];
 
-  async get(stepIndex: number): Promise<StepSnapshot | null> {
+  async get(stepIndex: number, signal?: AbortSignal): Promise<StepSnapshot | null> {
     if (this.cache.has(stepIndex)) {
       // Move to front of LRU order
       this.order = [stepIndex, ...this.order.filter(k => k !== stepIndex)];
@@ -19,12 +19,13 @@ class SnapshotCacheStore {
       const url = stepIndex >= 0
         ? `${BACKEND}/api/snapshots/${stepIndex}`
         : `${BACKEND}/api/snapshots/latest`;
-      const resp = await fetch(url);
+      const resp = await fetch(url, { signal });
       if (!resp.ok) return null;
       const snap: StepSnapshot = await resp.json();
       this.put(snap.stepIndex, snap);
       return snap;
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return null;
       return null;
     }
   }
