@@ -37,37 +37,74 @@ function makeFilter(overrides: Partial<FilterSpec> = {}): FilterSpec {
 describe('CellRenderer.passesFilter', () => {
   it('applies exact level matching when cumulative is disabled', () => {
     const renderer = new CellRenderer(new THREE.Scene());
-    const passesFilter = (renderer as any).passesFilter.bind(renderer) as (c: CellRecord, f: FilterSpec) => boolean;
 
-    expect(passesFilter(makeCell({ level: 2 }), makeFilter({ level: 2, levelCumulative: false }))).toBe(true);
-    expect(passesFilter(makeCell({ level: 1 }), makeFilter({ level: 2, levelCumulative: false }))).toBe(false);
+    const cells = [
+      makeCell({ level: 1, rank: 1 }),
+      makeCell({ level: 2, rank: 2 }),
+      makeCell({ level: 3, rank: 3 }),
+    ];
+
+    renderer.updateFromSnapshot({
+      cells,
+      filter: makeFilter({ level: 2, levelCumulative: false }),
+    });
+
+    const visibleCells = renderer.getCells();
+
+    // Only level 2 cells should be visible when cumulative is disabled.
+    expect(visibleCells.length).toBe(1);
+    expect(visibleCells[0].level).toBe(2);
 
     renderer.dispose();
   });
 
   it('applies <= level matching when cumulative is enabled', () => {
     const renderer = new CellRenderer(new THREE.Scene());
-    const passesFilter = (renderer as any).passesFilter.bind(renderer) as (c: CellRecord, f: FilterSpec) => boolean;
 
-    expect(passesFilter(makeCell({ level: 1 }), makeFilter({ level: 2, levelCumulative: true }))).toBe(true);
-    expect(passesFilter(makeCell({ level: 2 }), makeFilter({ level: 2, levelCumulative: true }))).toBe(true);
-    expect(passesFilter(makeCell({ level: 3 }), makeFilter({ level: 2, levelCumulative: true }))).toBe(false);
+    const cells = [
+      makeCell({ level: 1, rank: 1 }),
+      makeCell({ level: 2, rank: 2 }),
+      makeCell({ level: 3, rank: 3 }),
+    ];
+
+    renderer.updateFromSnapshot({
+      cells,
+      filter: makeFilter({ level: 2, levelCumulative: true }),
+    });
+
+    const visibleCells = renderer.getCells();
+
+    // Levels <= 2 should be visible when cumulative is enabled.
+    expect(visibleCells.length).toBe(2);
+    expect(visibleCells.every((cell) => cell.level <= 2)).toBe(true);
 
     renderer.dispose();
   });
 
   it('respects showLocal/showRemote visibility toggles', () => {
     const renderer = new CellRenderer(new THREE.Scene());
-    const passesFilter = (renderer as any).passesFilter.bind(renderer) as (c: CellRecord, f: FilterSpec) => boolean;
 
-    const localCell = makeCell({ flags: CELL_FLAG_IS_LOCAL });
-    const remoteCell = makeCell({ flags: 0 });
+    const localCell = makeCell({ flags: CELL_FLAG_IS_LOCAL, rank: 1 });
+    const remoteCell = makeCell({ flags: 0, rank: 2 });
+    const cells = [localCell, remoteCell];
 
-    expect(passesFilter(localCell, makeFilter({ level: 0, showLocal: false, showRemote: true }))).toBe(false);
-    expect(passesFilter(localCell, makeFilter({ level: 0, showLocal: true, showRemote: false }))).toBe(true);
+    // Only remote cells visible when showLocal is false and showRemote is true.
+    renderer.updateFromSnapshot({
+      cells,
+      filter: makeFilter({ level: 0, showLocal: false, showRemote: true }),
+    });
+    let visibleCells = renderer.getCells();
+    expect(visibleCells.length).toBe(1);
+    expect(visibleCells[0].flags & CELL_FLAG_IS_LOCAL).toBe(0);
 
-    expect(passesFilter(remoteCell, makeFilter({ level: 0, showLocal: true, showRemote: false }))).toBe(false);
-    expect(passesFilter(remoteCell, makeFilter({ level: 0, showLocal: false, showRemote: true }))).toBe(true);
+    // Only local cells visible when showLocal is true and showRemote is false.
+    renderer.updateFromSnapshot({
+      cells,
+      filter: makeFilter({ level: 0, showLocal: true, showRemote: false }),
+    });
+    visibleCells = renderer.getCells();
+    expect(visibleCells.length).toBe(1);
+    expect(visibleCells[0].flags & CELL_FLAG_IS_LOCAL).toBe(CELL_FLAG_IS_LOCAL);
 
     renderer.dispose();
   });
