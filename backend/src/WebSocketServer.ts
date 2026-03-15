@@ -79,6 +79,8 @@ export class WebSocketServer {
         this.send(ws, {
           type: 'status',
           paused: this.store.isPaused(),
+          hasPauseMode: this.store.hasPauseModeTrees(),
+          autoAdvanceSim: this.store.isAutoAdvancing(),
           liveStep: this.store.getLiveStep(),
           totalSteps: this.store.getSummaries().length,
           trees: this.store.getRegisteredTrees(),
@@ -132,9 +134,21 @@ export class WebSocketServer {
         break;
       }
 
+      case 'reach_live':
+        this.store.setAutoAdvanceSim(true);
+        if (this.store.isPaused()) this.store.sendContinueToAllPaused();
+        break;
+
+      case 'pause_sim':
+        this.store.setAutoAdvanceSim(false);
+        break;
+
+      case 'resume_sim':
+        if (this.store.isPaused()) this.store.sendContinueToAllPaused();
+        break;
+
       case 'continue':
-        this.store.sendContinueToAllPaused();
-        this.send(ws, { type: 'continue_ack' });
+        if (this.store.isPaused()) this.store.sendContinueToAllPaused();
         break;
 
       default:
