@@ -41,6 +41,9 @@ export class SpaceTreeStore {
   private pendingTimestamps: Map<number, number> = new Map();
   /** Trees that have sent STEP_END for each step. */
   private pendingEnded: Map<number, Set<string>> = new Map();
+  /** Steps whose grace period has elapsed and are ready to commit in order. */
+  private readySteps: Set<number> = new Set();
+  private nextCommitStep: number | null = null;
 
   /** Trees that have sent PAUSE_ACK for the current step. */
   private pausedTrees: Set<string> = new Set();
@@ -105,6 +108,8 @@ export class SpaceTreeStore {
     this.pending.clear();
     this.pendingTimestamps.clear();
     this.pendingEnded.clear();
+    this.readySteps.clear();
+    this.nextCommitStep = null;
     this.committedSteps.clear();
     this.pausedTrees.clear();
     this.registeredTrees.clear();
@@ -120,6 +125,9 @@ export class SpaceTreeStore {
     this.registeredTrees.add(treeKey);
     // Ignore STEP_BEGIN for steps we already committed (late-arriving trees in step 0).
     if (this.committedSteps.has(stepIndex)) return;
+    if (this.nextCommitStep === null || stepIndex < this.nextCommitStep) {
+      this.nextCommitStep = stepIndex;
+    }
     if (!this.pending.has(stepIndex)) {
       this.pending.set(stepIndex, new Map());
       this.pendingTimestamps.set(stepIndex, timestamp);
@@ -167,7 +175,8 @@ export class SpaceTreeStore {
       const en = this.pendingEnded.get(stepIndex);
       if (!sm || !en) return;
       if ([...sm.keys()].every(k => en.has(k))) {
-        this.commitStep(stepIndex);
+        this.readySteps.add(stepIndex);
+        this.flushReadySteps();
       }
     }, 30);
     this.pendingCommitTimers.set(stepIndex, timer);
@@ -188,6 +197,24 @@ export class SpaceTreeStore {
 
   isPaused(): boolean {
     return this.pausedTrees.size > 0;
+  }
+
+  private flushReadySteps(): void {
+    if (this.nextCommitStep === null) return;
+
+    while (this.nextCommitStep !== null) {
+      const stepIndex = this.nextCommitStep;
+      if (!this.readySteps.has(stepIndex)) break;
+      this.readySteps.delete(stepIndex);
+      this.commitStep(stepIndex);
+
+      const pendingIndices = [...this.pending.keys()];
+      const readyIndices = [...this.readySteps.values()];
+      const candidateIndices = [...pendingIndices, ...readyIndices].filter(i => !this.committedSteps.has(i));
+      this.nextCommitStep = candidateIndices.length > 0
+        ? Math.min(...candidateIndices)
+        : null;
+    }
   }
 
   private commitStep(stepIndex: number): void {
