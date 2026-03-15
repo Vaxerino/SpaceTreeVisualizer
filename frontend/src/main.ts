@@ -223,9 +223,12 @@ function prefetchAdjacent(idx: number): void {
   if (next) void SnapshotCache.get(next.stepIndex);
 }
 
-function displayHistoricalSnapshot(snap: StepSnapshot): void {
+async function displayHistoricalSnapshot(snap: StepSnapshot): Promise<void> {
   currentSnapshot = snap;
   orientCameraIfNeeded(snap);
+  if (AppState.simMeta === null) {
+    await fetchAndApplyMeta();
+  }
   const cells = snap.cells;
   cellRenderer.updateFromSnapshot(
     cells,
@@ -246,7 +249,7 @@ async function navigateToStep(stepIndex: number): Promise<void> {
   fetchController = new AbortController();
   const snap = await SnapshotCache.get(stepIndex, fetchController.signal);
   if (!snap) return; // aborted or 404 — display unchanged
-  displayHistoricalSnapshot(snap);
+  await displayHistoricalSnapshot(snap);
   prefetchAdjacent(AppState.currentSummaryIndex);
 }
 
@@ -282,6 +285,11 @@ async function loadSummaries(): Promise<void> {
     // Correct currentSummaryIndex
     if (AppState.viewMode === 'live' || baseline.length === 0) {
       AppState.setState({ currentSummaryIndex: baseline.length - 1 });
+      // In live mode, warm the scene with the latest REST snapshot so the
+      // renderer shows something before the first WS snapshot_data arrives.
+      if (baseline.length > 0 && !currentSnapshot) {
+        void navigateToStep(baseline[baseline.length - 1]!.stepIndex);
+      }
     } else {
       const idx = prevStepIndex >= 0
         ? baseline.findIndex(s => s.stepIndex === prevStepIndex)
@@ -480,6 +488,11 @@ AppState.onChange(() => timeline.update(buildTimelineState()));
 
 // Initial render
 timeline.update(buildTimelineState());
+
+// Eagerly load summaries and meta at startup so historical navigation and
+// the sim field picker are available before the first WS status message.
+void loadSummaries();
+void fetchAndApplyMeta();
 
 // Expose a minimal debug handle for Playwright integration tests.
 // Gives tests read-only access to renderer internals without modifying the
