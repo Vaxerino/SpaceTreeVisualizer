@@ -60,13 +60,12 @@ export class CellRenderer {
     simFieldIndex: number,
     maxLevel: number,
     simMeta: SimMeta | null,
-    simRangeOverride: [number, number] | null = null,
   ): void {
     const useSubcells = colorMode === 'sim' && simMeta !== null && simMeta.patchSize > 1;
     const shouldFallbackToCells = useSubcells && this.estimatedSubcellInstances(cells, filter, simMeta!) > MAX_INSTANCES;
 
     const [simMin, simMax] = colorMode === 'sim'
-      ? (simRangeOverride ?? ColorMapper.simRange(cells, simFieldIndex, simMeta))
+      ? ColorMapper.simRange(cells, simFieldIndex, simMeta)
       : [0, 1];
     this.lastSimRange = [simMin, simMax];
     this.usingSimFallback = shouldFallbackToCells;

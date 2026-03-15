@@ -42,7 +42,6 @@ const fakeMeta: SimMeta = {
   nUnknowns: N_UNKNOWNS,
   nAux: N_AUX,
   unknownNames: ['rho', 'vx', 'vy', 'vz', 'E'],
-  initialFieldRanges: null,
 };
 
 const fakeSnapshot: StepSnapshot = {

@@ -107,7 +107,7 @@ export class SpaceTreeStore {
   /** Record patch metadata from a connecting tree's handshake. First writer wins. */
   setSimMeta(patchSize: number, nUnknowns: number, nAux: number): void {
     if (this.simMeta === null) {
-      this.simMeta = { patchSize, nUnknowns, nAux, unknownNames: null, initialFieldRanges: null };
+      this.simMeta = { patchSize, nUnknowns, nAux, unknownNames: null };
     }
   }
 
@@ -284,13 +284,6 @@ export class SpaceTreeStore {
       cellCount: allCells.length,
     };
 
-    if (stepIndex === 0 && this.simMeta !== null && this.simMeta.initialFieldRanges === null) {
-      this.simMeta = {
-        ...this.simMeta,
-        initialFieldRanges: this.computeInitialFieldRanges(allCells, this.simMeta),
-      };
-    }
-
     this.snapshots.push(snapshot);
     if (this.snapshots.length > this.maxSnapshots) {
       this.snapshots.shift();
@@ -381,32 +374,4 @@ export class SpaceTreeStore {
     return this.expectedTrees ?? this.registeredTrees;
   }
 
-  private computeInitialFieldRanges(cells: CellRecord[], simMeta: SimMeta): Array<[number, number]> {
-    const totalFields = simMeta.nUnknowns + simMeta.nAux;
-    const result: Array<[number, number]> = [];
-
-    for (let field = 0; field < simMeta.nUnknowns; field++) {
-      let min = Infinity;
-      let max = -Infinity;
-
-      for (const cell of cells) {
-        if (!cell.simData || cell.simData.length === 0) continue;
-        const payloadLength = cell.simDataLength ?? cell.simData.length;
-        const nSubcells = Math.floor(payloadLength / totalFields);
-        for (let subcell = 0; subcell < nSubcells; subcell++) {
-          const value = cell.simData[subcell * totalFields + field];
-          if (value === undefined || !isFinite(value)) continue;
-          if (value < min) min = value;
-          if (value > max) max = value;
-        }
-      }
-
-      if (!isFinite(min)) min = 0;
-      if (!isFinite(max)) max = 1;
-      if (min === max) max = min + 1;
-      result.push([min, max]);
-    }
-
-    return result;
-  }
 }

@@ -23,7 +23,6 @@ export interface SimMeta {
   nUnknowns: number;
   nAux: number;
   unknownNames: string[] | null;
-  initialFieldRanges: Array<[number, number]> | null;
 }
 
 /** Geometry + metadata for one cell, as parsed from a CellRecord. */
