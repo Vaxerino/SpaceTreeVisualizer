@@ -139,7 +139,9 @@ On each WS `status` message where `!firstLoadComplete`: fetch `GET /api/snapshot
 
 Using `splice(0)` atomically drains the buffer in a single JS microtask. Setting `firstLoadComplete=true` before merging ensures no event is lost: any `step_committed` arriving after step 3 goes directly to `summaries` and is never in `pendingCommits`.
 
-On WS disconnect: reset `firstLoadComplete = false` so reconnect re-loads summaries.
+On WS disconnect: reset `firstLoadComplete = false` so reconnect re-loads summaries. After `loadSummaries` completes on reconnect, correct `currentSummaryIndex`:
+- `live` mode: `currentSummaryIndex = summaries.length - 1`.
+- `historical`/`playing`: find the previously displayed `stepIndex` in the new `summaries` array. If found, use that index. If not found (step evicted or from a previous run), set `currentSummaryIndex = summaries.length - 1` and call `navigateToStep(summaries[last].stepIndex)` to sync the display.
 
 ### Ring-buffer eviction and index correction
 
@@ -150,7 +152,7 @@ After appending a new entry, if `summaries.length > 200`:
 3. Index correction:
    - `live` mode: `currentSummaryIndex = summaries.length - 1` (stay at new last).
    - `historical` or `playing`: `currentSummaryIndex = Math.max(0, currentSummaryIndex - evicted)`.
-     - If the displayed step was evicted (index was in `0..evicted-1`), the index clamps to 0 — display silently shifts to the new oldest available step. In `playing` mode this causes a silent forward jump; the timer continues from the new index 0. This is acceptable for a developer tool. No mode transition is triggered.
+     - If the displayed step was evicted (old index was in `0..evicted-1`): the new index is 0. **Call `navigateToStep(summaries[0].stepIndex)`** to update the rendered scene to match the new slider position. Without this call the slider and the displayed cells would show different steps. In `playing` mode the timer resumes forward from index 0.
 4. Update slider `max` and `value`.
 
 ### Slider mapping
