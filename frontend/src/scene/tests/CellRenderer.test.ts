@@ -134,7 +134,7 @@ describe('CellRenderer.passesFilter', () => {
       'turbo',
       0, // fieldIndex = rho
       1,
-      { patchSize: PATCH_SIZE, nUnknowns: 5, nAux: 0, unknownNames: null },
+      { patchSize: PATCH_SIZE, nUnknowns: 5, nAux: 0, unknownNames: null, initialFieldRanges: null },
     );
 
     // 1 AMR cell × 27 subcells = 27 instances
@@ -167,7 +167,7 @@ describe('CellRenderer.passesFilter', () => {
       'turbo',
       0,
       1,
-      { patchSize: PATCH_SIZE, nUnknowns: 4, nAux: 0, unknownNames: null },
+      { patchSize: PATCH_SIZE, nUnknowns: 4, nAux: 0, unknownNames: null, initialFieldRanges: null },
     );
 
     expect(renderer.usingSimFallback).toBe(true);

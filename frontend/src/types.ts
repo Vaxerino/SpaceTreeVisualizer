@@ -5,6 +5,7 @@ export interface SimMeta {
   nUnknowns: number;
   nAux: number;
   unknownNames: string[] | null;
+  initialFieldRanges: Array<[number, number]> | null;
 }
 
 

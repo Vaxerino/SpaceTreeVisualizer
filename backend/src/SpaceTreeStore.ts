@@ -69,10 +69,45 @@ export class SpaceTreeStore {
     }
   }
 
+  unregisterTree(key: string): void {
+    const removedRegistered = this.registeredTrees.delete(key);
+    const removedExpected = this.expectedTrees?.delete(key) ?? false;
+    this.pausedTrees.delete(key);
+    if (!removedRegistered && !removedExpected) return;
+
+    for (const [stepIndex, stepMap] of this.pending.entries()) {
+      const ended = this.pendingEnded.get(stepIndex);
+      stepMap.delete(key);
+      ended?.delete(key);
+      if (stepMap.size === 0) {
+        this.pending.delete(stepIndex);
+        this.pendingTimestamps.delete(stepIndex);
+        this.pendingEnded.delete(stepIndex);
+        this.readySteps.delete(stepIndex);
+        const timer = this.pendingCommitTimers.get(stepIndex);
+        if (timer !== undefined) {
+          clearTimeout(timer);
+          this.pendingCommitTimers.delete(stepIndex);
+        }
+        continue;
+      }
+
+      if (ended && this.stepHasAllExpectedTrees(stepIndex, stepMap, ended)) {
+        this.scheduleReadyCheck(stepIndex);
+      }
+    }
+
+    if (this.nextCommitStep !== null && !this.pending.has(this.nextCommitStep) && !this.readySteps.has(this.nextCommitStep)) {
+      const candidateIndices = [...this.pending.keys(), ...this.readySteps.values()].filter(i => !this.committedSteps.has(i));
+      this.nextCommitStep = candidateIndices.length > 0 ? Math.min(...candidateIndices) : null;
+    }
+    this.flushReadySteps();
+  }
+
   /** Record patch metadata from a connecting tree's handshake. First writer wins. */
   setSimMeta(patchSize: number, nUnknowns: number, nAux: number): void {
     if (this.simMeta === null) {
-      this.simMeta = { patchSize, nUnknowns, nAux, unknownNames: null };
+      this.simMeta = { patchSize, nUnknowns, nAux, unknownNames: null, initialFieldRanges: null };
     }
   }
 
@@ -166,22 +201,7 @@ export class SpaceTreeStore {
 
     if (!this.stepHasAllExpectedTrees(stepIndex, stepMap, ended)) return;
 
-    // All currently-started trees have ended.  Schedule a 30 ms grace period
-    // to allow late-connecting trees to send STEP_BEGIN(N) before we commit.
-    // If a new STEP_BEGIN(N) arrives, onStepBegin() cancels this timer.
-    if (this.pendingCommitTimers.has(stepIndex)) return; // already scheduled
-    const timer = setTimeout(() => {
-      this.pendingCommitTimers.delete(stepIndex);
-      // Re-check: all trees that began this step must have ended.
-      const sm = this.pending.get(stepIndex);
-      const en = this.pendingEnded.get(stepIndex);
-      if (!sm || !en) return;
-      if (this.stepHasAllExpectedTrees(stepIndex, sm, en)) {
-        this.readySteps.add(stepIndex);
-        this.flushReadySteps();
-      }
-    }, 30);
-    this.pendingCommitTimers.set(stepIndex, timer);
+    this.scheduleReadyCheck(stepIndex);
   }
 
   onPauseAck(treeKey: string): void {
@@ -219,6 +239,22 @@ export class SpaceTreeStore {
     }
   }
 
+  private scheduleReadyCheck(stepIndex: number): void {
+    // Preserve the 30 ms grace window for late STEP_BEGIN arrivals on startup.
+    if (this.pendingCommitTimers.has(stepIndex)) return;
+    const timer = setTimeout(() => {
+      this.pendingCommitTimers.delete(stepIndex);
+      const sm = this.pending.get(stepIndex);
+      const en = this.pendingEnded.get(stepIndex);
+      if (!sm || !en) return;
+      if (this.stepHasAllExpectedTrees(stepIndex, sm, en)) {
+        this.readySteps.add(stepIndex);
+        this.flushReadySteps();
+      }
+    }, 30);
+    this.pendingCommitTimers.set(stepIndex, timer);
+  }
+
   private commitStep(stepIndex: number): void {
     // Guard: don't double-commit (timer + a direct call could race).
     if (this.committedSteps.has(stepIndex)) return;
@@ -247,6 +283,13 @@ export class SpaceTreeStore {
       treeIds: [...stepMap.keys()],
       cellCount: allCells.length,
     };
+
+    if (stepIndex === 0 && this.simMeta !== null && this.simMeta.initialFieldRanges === null) {
+      this.simMeta = {
+        ...this.simMeta,
+        initialFieldRanges: this.computeInitialFieldRanges(allCells, this.simMeta),
+      };
+    }
 
     this.snapshots.push(snapshot);
     if (this.snapshots.length > this.maxSnapshots) {
@@ -336,5 +379,34 @@ export class SpaceTreeStore {
       return current ? new Set(current.keys()) : new Set();
     }
     return this.expectedTrees ?? this.registeredTrees;
+  }
+
+  private computeInitialFieldRanges(cells: CellRecord[], simMeta: SimMeta): Array<[number, number]> {
+    const totalFields = simMeta.nUnknowns + simMeta.nAux;
+    const result: Array<[number, number]> = [];
+
+    for (let field = 0; field < simMeta.nUnknowns; field++) {
+      let min = Infinity;
+      let max = -Infinity;
+
+      for (const cell of cells) {
+        if (!cell.simData || cell.simData.length === 0) continue;
+        const payloadLength = cell.simDataLength ?? cell.simData.length;
+        const nSubcells = Math.floor(payloadLength / totalFields);
+        for (let subcell = 0; subcell < nSubcells; subcell++) {
+          const value = cell.simData[subcell * totalFields + field];
+          if (value === undefined || !isFinite(value)) continue;
+          if (value < min) min = value;
+          if (value > max) max = value;
+        }
+      }
+
+      if (!isFinite(min)) min = 0;
+      if (!isFinite(max)) max = 1;
+      if (min === max) max = min + 1;
+      result.push([min, max]);
+    }
+
+    return result;
   }
 }

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import type { SpaceTreeStore } from './SpaceTreeStore';
+import type { CellRecord, StepSnapshot } from './types';
 
 /**
  * Express router providing REST endpoints for the browser frontend.
@@ -40,7 +41,7 @@ export function createRestRouter(store: SpaceTreeStore): Router {
       res.status(404).json({ error: 'no snapshots yet' });
       return;
     }
-    res.json(snapshot);
+    res.json(serializeSnapshot(snapshot));
   });
 
   router.get('/snapshots/:step', (req: Request, res: Response) => {
@@ -54,8 +55,41 @@ export function createRestRouter(store: SpaceTreeStore): Router {
       res.status(404).json({ error: `snapshot ${stepIndex} not found` });
       return;
     }
-    res.json(snapshot);
+    res.json(serializeSnapshot(snapshot));
   });
 
   return router;
+}
+
+function serializeSnapshot(snapshot: StepSnapshot): Record<string, unknown> {
+  return {
+    stepIndex: snapshot.stepIndex,
+    timestamp: snapshot.timestamp,
+    cellCount: snapshot.cellCount,
+    treeIds: snapshot.treeIds,
+    simFieldIndex: snapshot.simFieldIndex,
+    cells: snapshot.cells.map(serializeCell),
+    faces: snapshot.faces,
+    vertices: snapshot.vertices,
+  };
+}
+
+function serializeCell(cell: CellRecord): Record<string, unknown> {
+  return {
+    cx: cell.cx,
+    cy: cell.cy,
+    cz: cell.cz,
+    hx: cell.hx,
+    hy: cell.hy,
+    hz: cell.hz,
+    level: cell.level,
+    flags: cell.flags,
+    relPosX: cell.relPosX,
+    relPosY: cell.relPosY,
+    relPosZ: cell.relPosZ,
+    rank: cell.rank,
+    treeId: cell.treeId,
+    simData: cell.simData ? Array.from(cell.simData) : undefined,
+    simDataLength: cell.simDataLength,
+  };
 }

@@ -2,6 +2,7 @@ import { SceneManager } from './scene/SceneManager';
 import { CellRenderer } from './scene/CellRenderer';
 import { SelectionHighlight } from './scene/SelectionHighlight';
 import { PickingHelper } from './scene/PickingHelper';
+import { ColorMapper } from './scene/ColorMapper';
 import { WebSocketClient } from './WebSocketClient';
 import { BACKEND } from './store/SnapshotCache';
 import { AppState } from './store/AppState';
@@ -56,9 +57,11 @@ picker.onPick(id => {
 // --- Current snapshot ---
 let currentSnapshot: StepSnapshot | null = null;
 let cameraOriented = false;
+const simReferenceRanges: Map<number, [number, number]> = new Map();
 
 /** Fetch /api/meta and update AppState + ControlPanel. No-op if backend has no meta yet. */
-async function fetchAndApplyMeta(): Promise<void> {
+async function fetchAndApplyMeta(force = false): Promise<void> {
+  if (!force && AppState.simMeta !== null) return;
   try {
     const res = await fetch(`${BACKEND}/api/meta`);
     if (!res.ok) return; // 404 = no simulation connected yet
@@ -126,6 +129,21 @@ function clearLiveView(): void {
   timeline.setInfo('LIVE');
 }
 
+function getSimReferenceRange(cells: CellRecord[]): [number, number] | null {
+  if (AppState.colorMode !== 'sim') return null;
+  const metaRange = AppState.simMeta?.initialFieldRanges?.[AppState.simFieldIndex];
+  if (metaRange) {
+    simReferenceRanges.set(AppState.simFieldIndex, metaRange);
+    return metaRange;
+  }
+  const existing = simReferenceRanges.get(AppState.simFieldIndex);
+  if (existing) return existing;
+
+  const range = ColorMapper.simRange(cells, AppState.simFieldIndex, AppState.simMeta);
+  simReferenceRanges.set(AppState.simFieldIndex, range);
+  return range;
+}
+
 function reapplyFilter(): void {
   if (AppState.colorMode === 'sim' && (!currentSnapshot || !snapshotMatchesCurrentView(currentSnapshot))) {
     syncLiveViewState();
@@ -135,6 +153,7 @@ function reapplyFilter(): void {
     return;
   }
   const cells = currentSnapshot.cells;
+  const simRangeOverride = getSimReferenceRange(cells);
   cellRenderer.updateFromSnapshot(
     cells,
     AppState.filter,
@@ -143,6 +162,7 @@ function reapplyFilter(): void {
     AppState.simFieldIndex,
     getMaxLevel(cells),
     AppState.simMeta,
+    simRangeOverride,
   );
   updateColorbar(cells, AppState.colorMode);
   highlight.hide();
@@ -167,8 +187,11 @@ async function displaySnapshot(snap: StepSnapshot): Promise<void> {
   orientCameraIfNeeded(snap);
   if (AppState.simMeta === null) {
     await fetchAndApplyMeta();
+  } else if (AppState.colorMode === 'sim' && AppState.simMeta.initialFieldRanges === null) {
+    await fetchAndApplyMeta(true);
   }
   const cells = snap.cells;
+  const simRangeOverride = getSimReferenceRange(cells);
   cellRenderer.updateFromSnapshot(
     cells,
     AppState.filter,
@@ -177,6 +200,7 @@ async function displaySnapshot(snap: StepSnapshot): Promise<void> {
     AppState.simFieldIndex,
     getMaxLevel(cells),
     AppState.simMeta,
+    simRangeOverride,
   );
   updateColorbar(cells, AppState.colorMode);
   status.setLive(snap.stepIndex, snap.cellCount);
@@ -225,6 +249,7 @@ ws.on('simulation_reset', () => {
   });
   controls.updateTreeList([]);
   controls.updateSimMeta(null);
+  simReferenceRanges.clear();
   clearLiveView();
 });
 

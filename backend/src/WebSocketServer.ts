@@ -12,6 +12,7 @@ interface ClientState {
   simFieldIndex: number;
   snapshotInFlight: boolean;
   lastSentStepIndex: number;
+  lastSentViewKey: string;
 }
 
 /**
@@ -50,6 +51,7 @@ export class WebSocketServer {
       simFieldIndex: 0,
       snapshotInFlight: false,
       lastSentStepIndex: -1,
+      lastSentViewKey: '',
     });
 
     ws.on('message', raw => this.handleMessage(ws, raw));
@@ -154,6 +156,7 @@ export class WebSocketServer {
       if (ws.readyState !== WebSocket.OPEN) continue;
       state.snapshotInFlight = false;
       state.lastSentStepIndex = -1;
+      state.lastSentViewKey = '';
       ws.send(msg);
     }
   }
@@ -162,7 +165,8 @@ export class WebSocketServer {
     if (!state.live || state.snapshotInFlight || ws.readyState !== WebSocket.OPEN) return;
     const liveSnapshot = snapshot ?? this.store.getLatestSnapshot();
     if (!liveSnapshot) return;
-    if (liveSnapshot.stepIndex === state.lastSentStepIndex && !state.includeSimData) return;
+    const viewKey = this.viewKey(state);
+    if (liveSnapshot.stepIndex === state.lastSentStepIndex && viewKey === state.lastSentViewKey) return;
     this.sendSnapshot(ws, state, liveSnapshot);
   }
 
@@ -171,10 +175,15 @@ export class WebSocketServer {
     const serialized = serializeSnapshot(snapshot, state.includeSimData ? state.simFieldIndex : null, simMeta);
     state.snapshotInFlight = true;
     state.lastSentStepIndex = snapshot.stepIndex;
+    state.lastSentViewKey = this.viewKey(state);
     this.send(ws, { type: 'snapshot_data', ...serialized.json });
     if (serialized.binary) {
       ws.send(serialized.binary);
     }
+  }
+
+  private viewKey(state: ClientState): string {
+    return state.includeSimData ? `sim:${state.simFieldIndex}` : 'geometry';
   }
 
   private send(ws: WebSocket, obj: unknown): void {

@@ -93,6 +93,11 @@ export class WebSocketClient {
   }
 
   private handleBinary(buffer: ArrayBuffer): void {
+    if (buffer.byteLength < 16) {
+      console.warn('[ws] ignoring truncated sim payload frame');
+      return;
+    }
+
     const view = new DataView(buffer);
     const magic = view.getUint32(0, true);
     if (magic !== SIM_DATA_FRAME_MAGIC) {
@@ -103,6 +108,13 @@ export class WebSocketClient {
     const stepIndex = view.getInt32(4, true);
     const simFieldIndex = view.getInt32(8, true);
     const valueCount = view.getUint32(12, true);
+    const expectedBytes = 16 + valueCount * 4;
+    if (buffer.byteLength < expectedBytes) {
+      console.warn(
+        `[ws] ignoring truncated sim payload frame for step ${stepIndex}: expected ${expectedBytes} bytes, got ${buffer.byteLength}`,
+      );
+      return;
+    }
     const pending = this.pendingSnapshots.get(stepIndex);
     if (!pending) {
       console.warn(`[ws] missing snapshot metadata for sim payload step ${stepIndex}`);
@@ -113,8 +125,18 @@ export class WebSocketClient {
     let offset = 0;
     for (const cell of pending.snapshot.cells) {
       const len = cell.simDataLength ?? 0;
+      if (offset + len > valueCount) {
+        console.warn(`[ws] sim payload length mismatch for step ${stepIndex}`);
+        this.pendingSnapshots.delete(stepIndex);
+        return;
+      }
       cell.simData = values.slice(offset, offset + len);
       offset += len;
+    }
+    if (offset !== valueCount) {
+      console.warn(`[ws] sim payload count mismatch for step ${stepIndex}: consumed ${offset}, header ${valueCount}`);
+      this.pendingSnapshots.delete(stepIndex);
+      return;
     }
     pending.snapshot.simFieldIndex = simFieldIndex;
     this.pendingSnapshots.delete(stepIndex);

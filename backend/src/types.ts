@@ -23,6 +23,7 @@ export interface SimMeta {
   nUnknowns: number;
   nAux: number;
   unknownNames: string[] | null;
+  initialFieldRanges: Array<[number, number]> | null;
 }
 
 /** Geometry + metadata for one cell, as parsed from a CellRecord. */
@@ -36,7 +37,8 @@ export interface CellRecord {
   // Source info
   rank: number;
   treeId: number;
-  // Optional simulation data for the currently selected display field.
+  // Optional raw per-cell simulation payload parsed from TCP.
+  // For patch data this is still the full interleaved field array.
   simData?: Float32Array;
   simDataLength?: number;
 }
