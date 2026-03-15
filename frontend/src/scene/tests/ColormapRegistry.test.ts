@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { interpolateTurbo } from 'd3-scale-chromatic';
-import { COLORMAP_NAMES, sample } from './ColormapRegistry';
+import { COLORMAP_NAMES, sample } from '../ColormapRegistry';
 
 function parseRgb(rgb: string): number {
   const m = rgb.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);

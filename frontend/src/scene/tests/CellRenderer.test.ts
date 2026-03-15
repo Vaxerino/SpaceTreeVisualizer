@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import type { CellRecord, FilterSpec } from '../types';
-import { CELL_FLAG_IS_LOCAL } from '../types';
-import { CellRenderer } from './CellRenderer';
+import type { CellRecord, FilterSpec } from '../../types';
+import { CELL_FLAG_IS_LOCAL } from '../../types';
+import { CellRenderer } from '../CellRenderer';
 
 function makeCell(overrides: Partial<CellRecord> = {}): CellRecord {
   return {
