@@ -67,7 +67,9 @@ export class ColorMapper {
       case 'treeId': {
         // Golden-angle hue hashing — gives well-separated hues for any set of integers.
         // Ignores the colormap parameter by design.
-        const hue = (cell.treeId * 137.508) % 360;
+        // Use (n % 360 + 360) % 360 to guard against negative treeId values:
+        // JavaScript's % returns negative results for negative operands.
+        const hue = ((cell.treeId * 137.508) % 360 + 360) % 360;
         return this._color.setHSL(hue / 360, 0.65, 0.55);
       }
 
