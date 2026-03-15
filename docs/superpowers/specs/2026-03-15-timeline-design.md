@@ -8,45 +8,62 @@
 
 ## Overview
 
-Add a full AE-style timeline to the bottom bar with two independent control groups:
+Two independent control groups added to the bottom bar:
 
-1. **Timeline controls** — visual playback through the committed step ring buffer (independent of the running simulation)
-2. **Simulation controls** — pause/resume the C++ simulation (PAUSE_MODE only)
+1. **Timeline controls** — AE-style visual playback through the committed step ring buffer
+2. **Simulation controls** — pause/resume the running C++ simulation (PAUSE_MODE only)
 
-The two groups interact in one direction: **when playback enters LIVE mode, the simulation is automatically resumed.**
+They interact in one direction: **entering LIVE mode auto-resumes the simulation.**
 
-No C++ template changes required. No new REST endpoints.
+No C++ template changes. No new REST endpoints (existing `GET /api/snapshots` is used).
+
+---
+
+## Types
+
+```ts
+// Already defined in backend/src/types.ts and frontend/src/types.ts
+interface SnapshotSummary {
+  stepIndex: number;   // simulation step index; non-contiguous after ring-buffer eviction
+  timestamp: number;   // simulation time in seconds (float64)
+  cellCount: number;
+}
+```
 
 ---
 
 ## Bottom Bar Layout
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│  ◀  ▶/⏸  ▶  [──────────────●──────────────]  step 42  t=0.250s  [LIVE]  │  ⏸ Pause Sim     │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│  ◀  ▶/⏸  ▶  [──────────●──────]  step 42  t=0.250s  [LIVE]  │  ⏸ Pause Sim         │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Timeline group (left, flex-grow)
 
 | Control | Element | Behaviour |
 |---------|---------|-----------|
-| `◀` prev | `<button>` | Step back one entry in summaries; enter `historical` |
-| `▶/⏸` play-pause | `<button>` | Toggle `playing` ↔ `historical` |
-| `▶` next | `<button>` | Step forward one entry in summaries; enter `historical` |
-| Scrubber | `<input type="range">` | `min=0 max=summaries.length-1`; drag enters `historical`; debounced 50 ms |
-| Step info | `<span>` | `step 42  t=0.250s` — actual sim step index + sim timestamp from summary |
-| `LIVE` button | `<button>` | Lit green when `viewMode==='live'`; click → enter `live` |
+| `◀` prev | `<button>` | Step back one index; enter `historical` |
+| `▶/⏸` play-pause | `<button>` | `historical`→`playing`; `playing`→`historical`; `live`→`playing` from last index |
+| `▶` next | `<button>` | Step forward one index; enter `historical` |
+| Scrubber | `<input type="range">` | `min=0 max=summaries.length-1`; drag→`historical`; 50 ms debounce; `disabled=true` pinned to `summaries.length-1` when `viewMode==='live'` |
+| Step info | `<span>` | `step N  t=X.XXXs`; shows `—` when summaries is empty |
+| `[LIVE]` | `<button>` | Lit green in `live`; click → `live` |
 
-### Simulation group (right, fixed width, shown only when `hasPauseMode===true`)
+When `summaries` is empty (`currentSummaryIndex === -1`): slider/◀/▶/⏸ disabled; `[LIVE]` remains active.
 
-| Sim state | Control shown |
-|-----------|---------------|
-| `autoAdvanceSim=true` (running) | `⏸ Pause Sim` |
-| `autoAdvanceSim=false`, trees paused | `▶ Resume Sim` |
-| No PAUSE_MODE trees connected | _(hidden)_ |
+### Simulation group (right, fixed width, visible only when `hasPauseMode===true`)
 
-`Continue →` is retired. `▶ Resume Sim` replaces it entirely.
+| Condition | Button |
+|-----------|--------|
+| `autoAdvanceSim=true` | `⏸ Pause Sim` |
+| `autoAdvanceSim=false` and `isPaused===true` | `▶ Resume Sim` |
+| `autoAdvanceSim=false` and `isPaused===false` | _(nothing — transient: CONTINUE was sent, awaiting next PAUSE_ACK)_ |
+
+`Continue →` is retired; `▶ Resume Sim` replaces it.
+
+**`▶ Resume Sim` is a single-step advance.** It is only ever rendered when `autoAdvanceSim=false`. `resume_sim` does not change `autoAdvanceSim`, so the backend stays in hold mode and halts again at the next PAUSE_ACK — single-step is guaranteed by the rendering invariant.
 
 ---
 
@@ -55,73 +72,103 @@ No C++ template changes required. No new REST endpoints.
 ### Playback viewMode (frontend)
 
 ```
-          user scrubs/prev/next/⏸
- live ──────────────────────────────► historical
-  ▲                                       │
-  │  auto-play reaches last summary       │ ▶ button
-  │  OR LIVE button clicked               ▼
-  └──────────────────────────────────── playing
-                                   (200 ms/step timer)
+       scrubs/◀/▶-step / ⏸-while-playing
+ live ──────────────────────────────────────────► historical
+  ▲                                                    │
+  │  timer reaches last summary / LIVE button          │ ▶/⏸ (play-pause)
+  │                                                    ▼
+  └───────────────────────────────────────────────── playing  ◄── ▶/⏸ while live
+                                                 (200 ms/step timer)
 ```
 
-| Mode | Description |
-|------|-------------|
-| `live` | Always shows latest committed step; `step_committed` auto-updates display |
-| `playing` | 200 ms timer advances `currentSummaryIndex`; reaching end → `live` |
-| `historical` | Locked to `currentSummaryIndex`; display frozen |
+Full transition table:
 
-On entering `live` (any path): send `{type:"reach_live"}` over WebSocket.
+| From | Trigger | To | `reach_live` sent? |
+|------|---------|----|--------------------|
+| any | LIVE button | `live` | yes |
+| `live` | scrub / ◀ / ▶-step | `historical` | no |
+| `live` | ▶/⏸ play-pause | `playing` (currentSummaryIndex = last) | no |
+| `historical` | ▶/⏸ play-pause | `playing` (from currentSummaryIndex) | no |
+| `historical` | scrub / ◀ / ▶-step | stays `historical` | no |
+| `playing` | ▶/⏸ play-pause | `historical` | no |
+| `playing` | scrub / ◀ / ▶-step | `historical` | no |
+| `playing` | timer reaches last summary | `live` | yes |
 
-### Simulation autoAdvanceSim (backend)
+**Entering `playing` sends no message.** `autoAdvanceSim` is unchanged. If entered from `live` (autoAdvanceSim=true), the simulation keeps running. If entered from `historical` (autoAdvanceSim=false), the simulation stays paused. When auto-play eventually reaches the last summary and transitions to `live`, `reach_live` sets `autoAdvanceSim=true` and sends CONTINUE if the sim is currently held.
+
+**`step_committed` during `playing`:** the new summary is appended to `AppState.summaries` (length grows). The timer checks `next >= AppState.summaries.length` on each tick; if new steps arrive before it wraps, playback continues into the newly arrived steps rather than transitioning to `live`. This is intentional — the timer follows live steps in `playing` mode the same way LIVE mode would.
+
+**Initial connect and reconnect:** on every WebSocket `status` message, if `viewMode === 'live'` → send `{type:"reach_live"}` to sync `autoAdvanceSim=true`. On WS disconnect, set `firstLoadComplete = false` so reconnect triggers a fresh summaries load. This ensures `autoAdvanceSim` is correctly synced after reconnect regardless of what state the backend reset to.
+
+### Simulation `autoAdvanceSim` (backend `SpaceTreeStore`)
+
+`autoAdvanceSim: boolean`, default `false`. `isPaused(): boolean` (existing) = `pausedTrees.size > 0`.
 
 | Value | Behaviour |
 |-------|-----------|
-| `true` | When all trees send PAUSE_ACK, immediately call `sendContinueToAllPaused()` |
+| `true` | When `pausedTrees.size === pauseModeTrees.size` → `sendContinueToAllPaused()` immediately |
 | `false` | Hold at PAUSE_ACK until explicit browser command |
 
-| Trigger | Effect |
-|---------|--------|
-| `{type:"reach_live"}` from browser | `setAutoAdvanceSim(true)`; if currently held, send CONTINUE immediately |
-| `{type:"pause_sim"}` from browser | `setAutoAdvanceSim(false)` |
-| `{type:"resume_sim"}` from browser | One-shot `sendContinueToAllPaused()` (does not change `autoAdvanceSim`) |
+| Browser message | Backend effect |
+|-----------------|----------------|
+| `reach_live` | `setAutoAdvanceSim(true)`; if `isPaused()` → `sendContinueToAllPaused()` |
+| `pause_sim` | `setAutoAdvanceSim(false)` |
+| `resume_sim` | if `isPaused()` → `sendContinueToAllPaused()` (autoAdvanceSim unchanged) |
+| `continue` | old handler **replaced** (old case removed); identical logic to `resume_sim` |
 
-`{type:"continue"}` retained as alias for `resume_sim` (backward compat with `test_sender.py`).
+Adding the `isPaused()` guard to `continue` is safe: in non-PAUSE_MODE runs there are no paused trees, so both old and new behaviour are no-ops.
 
-**In historical mode** `autoAdvanceSim` stays `false` — the simulation naturally holds between steps while the user scrubs, with no extra flag needed.
+**After `resetForNewRun()`:** `broadcastReset` already fires, causing the frontend to receive a `simulation_reset` message. On the next `status` message (after trees reconnect) the frontend re-syncs `hasPauseMode` and `autoAdvanceSim`.
 
 ---
 
 ## Summaries — Slider Data Source
 
-`AppState.summaries: SnapshotSummary[]` maps slider positions (0-based index) to actual step data.
+`GET /api/snapshots` is an **existing endpoint** in `RestApiRouter.ts` that returns `SnapshotSummary[]`. No changes to `RestApiRouter.ts` are required.
 
-### Population
+### Population and race condition handling
 
-- **On WS connect** (inside `status` handler): fetch `GET /api/snapshots` → set `AppState.summaries`.
-- **On `step_committed`**: append `{stepIndex, timestamp, cellCount}` inline (no refetch). If `summaries.length > 200`, drop from the front (mirrors backend ring buffer eviction).
+On each WS `status` message where `!firstLoadComplete`: fetch `GET /api/snapshots`. Buffer concurrent `step_committed` events in `pendingCommits: SnapshotSummary[]`. On fetch response:
+
+1. Build baseline from REST response.
+2. **Atomically capture and clear the buffer:** `const captured = pendingCommits.splice(0)`.
+3. **Set `firstLoadComplete = true`** — after this point, all new `step_committed` events go directly to `summaries` via the normal append path.
+4. Merge: append any `captured` entry whose `stepIndex` is not already in the baseline (dedup).
+5. Sort merged array ascending by `stepIndex`.
+6. `AppState.setState({summaries: merged})`.
+
+Using `splice(0)` atomically drains the buffer in a single JS microtask. Setting `firstLoadComplete=true` before merging ensures no event is lost: any `step_committed` arriving after step 3 goes directly to `summaries` and is never in `pendingCommits`.
+
+On WS disconnect: reset `firstLoadComplete = false` so reconnect re-loads summaries.
+
+### Ring-buffer eviction and index correction
+
+After appending a new entry, if `summaries.length > 200`:
+
+1. `evicted = summaries.length - 200` (always 1 in practice).
+2. `summaries.splice(0, evicted)`.
+3. Index correction:
+   - `live` mode: `currentSummaryIndex = summaries.length - 1` (stay at new last).
+   - `historical` or `playing`: `currentSummaryIndex = Math.max(0, currentSummaryIndex - evicted)`.
+     - If the displayed step was evicted (index was in `0..evicted-1`), the index clamps to 0 — display silently shifts to the new oldest available step. In `playing` mode this causes a silent forward jump; the timer continues from the new index 0. This is acceptable for a developer tool. No mode transition is triggered.
+4. Update slider `max` and `value`.
 
 ### Slider mapping
 
-Slider value = index into `summaries` array, **not** the simulation step index. Step indices can be non-contiguous after ring buffer eviction.
+Slider value = 0-based index into `summaries` (not simulation step index).
 
 ```ts
 const summary = AppState.summaries[sliderValue];
-navigateToStep(summary.stepIndex);
+if (summary) navigateToStep(summary.stepIndex);
 ```
-
-In LIVE mode the slider thumb is pinned to `summaries.length - 1` and not interactive.
 
 ---
 
 ## Performance
 
-### Debounce slider input (50 ms)
+### AbortController — one fetch active at a time
 
-Rapid drag fires one `navigateToStep` call per settled position, not one per pixel.
-
-### AbortController for in-flight fetches
-
-`navigateToStep` stores the current `AbortController` in a module-level ref. Each call aborts the previous before starting a new `fetch()`. `SnapshotCache.get()` gains an optional `signal?: AbortSignal` parameter threaded to `fetch()`.
+`navigateToStep` aborts its predecessor before starting a new fetch. Only one fetch can complete and call `displayHistoricalSnapshot`, preventing out-of-order overwrites. This provides equivalent flow control to the live `snapshot_consumed` mechanism.
 
 ```ts
 let fetchController: AbortController | null = null;
@@ -130,48 +177,52 @@ async function navigateToStep(stepIndex: number): Promise<void> {
   fetchController?.abort();
   fetchController = new AbortController();
   const snap = await SnapshotCache.get(stepIndex, fetchController.signal);
-  if (!snap) return; // aborted or 404
+  if (!snap) return; // aborted or 404 — display unchanged
   displayHistoricalSnapshot(snap);
+  prefetchAdjacent(AppState.currentSummaryIndex);
 }
 ```
 
-### Play timer: skip tick if fetch in flight
+`SnapshotCache.get(signal?)`: on `AbortError` (`err.name === 'AbortError'`) returns `null` silently; does not evict the cache entry.
+
+### Play timer — independent promise tracking
+
+`playFetchPromise` is **only ever set by the play timer**, never by manual `navigateToStep` calls (from ◀/▶ buttons). Manual calls use the shared `fetchController` abort ref only. This means `setViewMode('historical')` can safely set `playFetchPromise = null` without risking collision with a manual-navigation promise.
 
 ```ts
-let fetchInProgress = false;
+let playFetchPromise: Promise<void> | null = null;
 
 playTimer = setInterval(() => {
-  if (fetchInProgress) return; // don't stack
+  if (playFetchPromise !== null) return; // previous tick still loading — skip
   const next = AppState.currentSummaryIndex + 1;
   if (next >= AppState.summaries.length) {
     setViewMode('live');
-  } else {
-    AppState.setState({ currentSummaryIndex: next });
-    fetchInProgress = true;
-    navigateToStep(AppState.summaries[next]!.stepIndex)
-      .finally(() => { fetchInProgress = false; });
+    return;
   }
+  AppState.setState({ currentSummaryIndex: next });
+  playFetchPromise = navigateToStep(AppState.summaries[next]!.stepIndex)
+    .finally(() => { playFetchPromise = null; });
 }, 200);
 ```
 
-### Speculative prefetch of adjacent steps
+`setViewMode('historical')`: `clearInterval(playTimer)`, `playFetchPromise = null`, `fetchController?.abort()`. The aborted promise's `.finally()` will also set `playFetchPromise = null` — harmless double-null.
 
-After `navigateToStep(idx)` completes successfully, fire background fetches for `idx-1` and `idx+1` (no abort signal — low priority warm-up). Makes ◀/▶ button presses feel instant.
+### Speculative prefetch
 
 ```ts
 function prefetchAdjacent(idx: number): void {
   const prev = AppState.summaries[idx - 1];
   const next = AppState.summaries[idx + 1];
-  if (prev) void SnapshotCache.get(prev.stepIndex); // background, no abort
+  if (prev) void SnapshotCache.get(prev.stepIndex); // no signal — background only
   if (next) void SnapshotCache.get(next.stepIndex);
 }
 ```
 
 ### Existing mitigations
 
-- `SnapshotCache` LRU (50 slots) — covers ±25 steps without refetch
-- Live snapshots arrive via WebSocket push — never hit REST during LIVE mode
-- Binary WebSocket path already used for sim data frames
+- `SnapshotCache` LRU (50 slots) — ±25 steps without refetch
+- Live snapshots via WebSocket push — no REST in LIVE mode
+- Binary WebSocket path for sim data (unchanged)
 
 ---
 
@@ -180,50 +231,121 @@ function prefetchAdjacent(idx: number): void {
 ### Backend
 
 #### `SpaceTreeStore.ts`
-- Add `private autoAdvanceSim: boolean = false`
-- Add `setAutoAdvanceSim(v: boolean): void`
-- Add `isAutoAdvancing(): boolean`
-- Add `hasPauseModeTrees(): boolean` — returns true if any registered tree has `pauseMode=true` (requires storing this flag per tree at `registerTree` time)
-- Modify `onPauseAck(treeKey)`: after recording the ACK, if `allTreesPaused() && autoAdvanceSim` → call `sendContinueToAllPaused()`
-- `registerTree(key, pauseMode)`: extend signature to store pause mode flag
+
+New:
+
+| Addition | Description |
+|----------|-------------|
+| `private autoAdvanceSim: boolean = false` | auto-continue flag |
+| `private pauseModeTrees: Set<string> = new Set()` | trees that declared PAUSE_MODE at handshake |
+| `setAutoAdvanceSim(v: boolean): void` | setter |
+| `isAutoAdvancing(): boolean` | returns `this.autoAdvanceSim` |
+| `hasPauseModeTrees(): boolean` | returns `this.pauseModeTrees.size > 0` |
+
+`registeredTrees: Set<string>` is an existing field.
+
+Changed:
+
+- `registerTree(key: string, pauseMode: boolean)`: extend signature. `pauseMode` comes from the handshake FLAGS bit 1 (`0x0002`), already parsed by `TCPServer`/`ProtocolParser` into `TreeConnection.pauseMode` — no C++ change needed. If `pauseMode` → `pauseModeTrees.add(key)`.
+- `unregisterTree(key)`: also `pauseModeTrees.delete(key)`. Note: the existing `unregisterTree` already calls `this.pausedTrees.delete(key)`, so the `pausedTrees` invariant is maintained.
+- `resetForNewRun()`: add `pauseModeTrees.clear(); autoAdvanceSim = false;`.
+- `onPauseAck(treeKey)`: after `pausedTrees.add(treeKey)`, check `pausedTrees.size === pauseModeTrees.size && autoAdvanceSim` → `sendContinueToAllPaused()`. Uses `pauseModeTrees` (not `registeredTrees`) because non-PAUSE_MODE trees never send PAUSE_ACK.
 
 #### `WebSocketServer.ts`
-- Handle `reach_live`: `store.setAutoAdvanceSim(true)`; if `store.isPaused()` → `store.sendContinueToAllPaused()`
-- Handle `pause_sim`: `store.setAutoAdvanceSim(false)`
-- Handle `resume_sim`: `store.sendContinueToAllPaused()` (same as existing `continue`)
-- Keep `continue` as alias
-- Add `hasPauseMode: store.hasPauseModeTrees()` to `status` broadcast
+
+Message handlers (`handleMessage` switch):
+
+| `type` | Action |
+|--------|--------|
+| `reach_live` (new) | `store.setAutoAdvanceSim(true)`; if `store.isPaused()` → `store.sendContinueToAllPaused()` |
+| `pause_sim` (new) | `store.setAutoAdvanceSim(false)` |
+| `resume_sim` (new) | if `store.isPaused()` → `store.sendContinueToAllPaused()` |
+| `continue` (existing — replace, not supplement) | same logic as `resume_sim`; old unconditional handler removed |
+
+`status` broadcast additions: `hasPauseMode: store.hasPauseModeTrees()`, `autoAdvanceSim: store.isAutoAdvancing()`. Existing `paused: store.isPaused()` is unchanged and maps to `isPaused` in `TimelineBarState`.
 
 ### Frontend
 
 #### `AppState.ts`
-- Replace `isLive: boolean` with `viewMode: 'live' | 'playing' | 'historical'`
+
+- Replace `isLive: boolean` with `viewMode: 'live' | 'playing' | 'historical'` (default `'live'`)
 - Add `currentSummaryIndex: number = -1`
-- Keep `summaries: SnapshotSummary[]` (was already declared)
+- `summaries: SnapshotSummary[]` already declared; stays `[]` until `loadSummaries` completes
 
 #### `SnapshotCache.ts`
-- Add `signal?: AbortSignal` to `get(stepIndex, signal?)`
-- Thread `signal` to `fetch()` call
-- On `AbortError`, return `null` silently
+
+- `get(stepIndex: number, signal?: AbortSignal): Promise<StepSnapshot | null>`
+- Thread `signal` into `fetch(url, { signal })`
+- Detect `AbortError` by `err.name === 'AbortError'`; return `null` silently; do not evict cache entry
 
 #### `TimelineBar.ts`
-- Full rewrite: two groups separated by a vertical rule
-- Timeline group: renders ◀, ▶/⏸, ▶, range input, step info span, LIVE button
-- Sim group: renders ⏸ Pause Sim or ▶ Resume Sim conditionally
-- Stateless view: accepts update data via `update(state: TimelineState)`, exposes typed callbacks
-- Keyboard listeners on `document`: Space (play/pause), `ArrowLeft` (prev), `ArrowRight` (next) — guarded against `<input>` / `<select>` focus
+
+Full rewrite. Pure view component: no internal state, no timers.
+
+```ts
+interface TimelineBarState {
+  viewMode: 'live' | 'playing' | 'historical';
+  summaryCount: number;
+  currentSummaryIndex: number;  // -1 when empty
+  currentStepIndex: number;     // -1 when empty; shown as "step N"
+  currentTimestamp: number;     // seconds; shown as "t=X.XXXs"
+  hasPauseMode: boolean;        // from status.hasPauseMode — shows/hides sim group
+  autoAdvanceSim: boolean;      // from status.autoAdvanceSim
+  isPaused: boolean;            // from existing status.paused
+}
+```
+
+Callbacks: `onPlay()`, `onPause()`, `onPrev()`, `onNext()`, `onScrub(idx: number)`, `onLive()`, `onPauseSim()`, `onResumeSim()`.
+
+Keyboard on `document`:
+
+```ts
+document.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  if (e.code === 'Space') { e.preventDefault(); /* toggle play/pause */ }
+  if (e.code === 'ArrowLeft') { e.preventDefault(); /* prev */ }
+  if (e.code === 'ArrowRight') { e.preventDefault(); /* next */ }
+});
+```
 
 #### `main.ts`
-- `loadSummaries()`: called inside `status` WS handler on first connect
-- `navigateToStep(stepIndex)`: abort-controller fetch, calls `displayHistoricalSnapshot`, triggers prefetch
-- `displayHistoricalSnapshot(snap)`: like `displaySnapshot` but does not send `snapshot_consumed` (not a live push) and sets `viewMode='historical'`
-- `setViewMode(mode)`: handles all transitions:
-  - `→ live`: clear play timer, pin slider, send `reach_live`, resume WS live push path
-  - `→ playing`: start `setInterval(200)`, send `leave_live` if was live (implicit — `reach_live` will be re-sent on next arrival at end)
-  - `→ historical`: clear play timer, lock display at `currentSummaryIndex`
-- `on('step_committed')`: append to `AppState.summaries`; trim front if > 200; in LIVE mode update display as before
-- `on('status')`: read `hasPauseMode`, call `loadSummaries()` on first connect
-- Keyboard handler on `document.keydown`: Space → `setViewMode(playing/historical)`; `ArrowLeft` / `ArrowRight` → navigate ±1 summary index; guard with `e.target instanceof HTMLInputElement || HTMLSelectElement`
+
+New module-level state:
+
+```ts
+let firstLoadComplete = false;
+let pendingCommits: SnapshotSummary[] = [];
+let fetchController: AbortController | null = null;
+let playTimer: ReturnType<typeof setInterval> | null = null;
+let playFetchPromise: Promise<void> | null = null;
+```
+
+New functions:
+
+- `loadSummaries()`: fetch + merge as described in Summaries section.
+- `navigateToStep(stepIndex)`: abort-controller fetch; on success `displayHistoricalSnapshot`; `prefetchAdjacent`.
+- `displayHistoricalSnapshot(snap)`: like `displaySnapshot` but:
+  - No `ws.send({type:'snapshot_consumed'})` — historical fetches are not live-push pipeline events.
+  - No `displayInProgress` flag — flow control is provided by the `fetchController` abort mechanism instead.
+  - No `syncLiveViewState()` call — `syncLiveViewState` (existing helper) sends `{type:'set_view', colorMode, simFieldIndex}` to instruct the backend which field to include in live snapshot pushes. Calling it from a historical fetch would incorrectly retrigger the live push pipeline for a one-time historical lookup.
+- `prefetchAdjacent(idx)`: background warm-up.
+- `setViewMode(mode)`:
+  - `→ live`: `clearInterval(playTimer); playTimer=null; fetchController?.abort(); playFetchPromise=null; AppState.setState({viewMode:'live'}); ws.send({type:'reach_live'}); syncLiveViewState()` — `syncLiveViewState` re-sends `{type:'set_view', colorMode, simFieldIndex}` to resync the backend's live push preferences after the user may have changed color mode or sim field while in historical/playing mode.
+  - `→ playing`: `clearInterval(playTimer); playTimer=null; AppState.setState({viewMode:'playing'}); /* start setInterval */`.
+  - `→ historical`: `clearInterval(playTimer); playTimer=null; fetchController?.abort(); playFetchPromise=null; AppState.setState({viewMode:'historical'})`.
+
+Changes to existing handlers:
+
+- `ws.on('open'/'reconnect')`: set `firstLoadComplete = false`.
+- `ws.on('status')`: if `!firstLoadComplete` → `loadSummaries()`; if `viewMode==='live'` → `ws.send({type:'reach_live'})`. Read `hasPauseMode`, `autoAdvanceSim`, `paused` into AppState.
+- `ws.on('step_committed')`: if `!firstLoadComplete` → `pendingCommits.push(...)`. Else → append, apply eviction+correction, update timeline bar. If `viewMode==='live'` → existing snapshot push path unchanged.
+- Wire `TimelineBar` callbacks. For navigation callbacks, **`currentSummaryIndex` must be updated before calling `navigateToStep`** (so `prefetchAdjacent` inside `navigateToStep` uses the correct index):
+  - `onPrev`: `const idx = Math.max(0, AppState.currentSummaryIndex - 1); setViewMode('historical'); AppState.setState({currentSummaryIndex: idx}); void navigateToStep(AppState.summaries[idx]!.stepIndex)`.
+  - `onNext`: same but `Math.min(summaries.length-1, currentSummaryIndex + 1)`.
+  - `onScrub(idx)`: `setViewMode('historical'); AppState.setState({currentSummaryIndex: idx}); void navigateToStep(AppState.summaries[idx]!.stepIndex)`.
+  - `onPlay/onPause/onLive`: call `setViewMode(...)` only.
+  - `onPauseSim/onResumeSim`: `ws.send(...)` only.
+- Also: on every `step_committed` in `live` mode, update `slider.value = summaries.length - 1` and `slider.max = summaries.length - 1` (not just on eviction).
 
 ---
 
@@ -233,26 +355,26 @@ function prefetchAdjacent(idx: number): void {
 
 | `type` | When sent |
 |--------|-----------|
-| `reach_live` | On entering `live` mode (auto-play end, LIVE button) |
+| `reach_live` | On every `status` message when `viewMode==='live'`; on entering `live` (any path) |
 | `pause_sim` | Pause Sim button click |
 | `resume_sim` | Resume Sim button click |
 
-### Inbound additions (backend → browser)
+### Inbound additions
 
-`status` message gains two new fields:
+`status` message gains two new fields; existing `paused` field is unchanged:
 
-| Field | Type | Meaning |
-|-------|------|---------|
-| `hasPauseMode` | `boolean` | Whether any connected tree has PAUSE_MODE set |
-| `autoAdvanceSim` | `boolean` | Current auto-advance state |
+| Field | Type | Source |
+|-------|------|--------|
+| `hasPauseMode` | `boolean` | `store.hasPauseModeTrees()` |
+| `autoAdvanceSim` | `boolean` | `store.isAutoAdvancing()` |
 
 ---
 
 ## What This Does Not Change
 
-- Binary WebSocket snapshot delivery for sim data (unchanged)
-- REST snapshot serialization (unchanged)
-- `test_sender.py` compatibility (`continue` alias preserved)
-- C++ Jinja2 templates (unchanged)
-- `ProtocolParser.ts`, `TCPServer.ts` (unchanged)
-- All existing color modes, filters, picking, detail panel (unchanged)
+- `RestApiRouter.ts` — `GET /api/snapshots` already exists and is used as-is
+- Binary WebSocket snapshot delivery for sim data
+- `test_sender.py` — `continue` handler logic is equivalent (guarded no-op for non-PAUSE_MODE)
+- C++ Jinja2 templates
+- `ProtocolParser.ts`, `TCPServer.ts`
+- All existing color modes, filters, picking, detail panel
