@@ -3,7 +3,7 @@ import { sample } from '../scene/ColormapRegistry';
 
 const BAR_WIDTH = 200;
 const BAR_HEIGHT = 14;
-const PADDING = { top: 18, right: 8, bottom: 8, left: 8 };
+const PADDING = { top: 18, right: 8, bottom: 16, left: 8 };
 const CANVAS_WIDTH  = BAR_WIDTH  + PADDING.left + PADDING.right;
 const CANVAS_HEIGHT = BAR_HEIGHT + PADDING.top  + PADDING.bottom;
 
@@ -65,9 +65,13 @@ export class ColorbarOverlay {
     ctx.fillText(label.toUpperCase(), x0 + BAR_WIDTH / 2, 3);
 
     // Min / max value labels
-    const fmt = (v: number) => Math.abs(v) < 1e4 && Math.abs(v) >= 0.001
-      ? v.toPrecision(4)
-      : v.toExponential(2);
+    const fmt = (v: number) => {
+      if (!isFinite(v)) return String(v);
+      if (v === 0) return '0';
+      return Math.abs(v) < 1e4 && Math.abs(v) >= 0.001
+        ? v.toPrecision(4)
+        : v.toExponential(2);
+    };
 
     ctx.font = '10px "JetBrains Mono", monospace';
     ctx.fillStyle = '#4a9eff';
