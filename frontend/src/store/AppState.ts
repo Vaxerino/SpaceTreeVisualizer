@@ -1,11 +1,7 @@
-import type { CellRecord, ColorMode, FilterSpec, SnapshotSummary } from '../types';
+import type { CellRecord, ColorMode, ColormapName, FilterSpec, SnapshotSummary } from '../types';
 
 type Listener = () => void;
 
-/**
- * Simple reactive state store. Components subscribe with onChange() and
- * re-render when state changes via setState().
- */
 class AppStateStore {
   currentStep: number = -1;
   isLive: boolean = true;
@@ -15,7 +11,8 @@ class AppStateStore {
   registeredTrees: string[] = [];
 
   colorMode: ColorMode = 'level';
-  filter: FilterSpec = { minLevel: 0, maxLevel: 12, showLocal: true, showRemote: true };
+  colormap: ColormapName = 'turbo';
+  filter: FilterSpec = { level: 4, levelCumulative: true, showLocal: true, showRemote: true };
   simFieldIndex: number = 0;
 
   selectedCell: CellRecord | null = null;
