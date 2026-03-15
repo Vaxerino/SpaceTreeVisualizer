@@ -137,6 +137,7 @@ export class CellRenderer {
     let count = 0;
 
     for (const c of cells) {
+      if (count >= MAX_INSTANCES) return count;
       if (!this.passesFilter(c, filter)) continue;
       if (!c.simData) continue;
 
@@ -156,11 +157,9 @@ export class CellRenderer {
       const oy = c.cy - gapHy * 0.5;
       const oz = is2D ? c.cz : c.cz - gapHz * 0.5;
 
-      for (let iz = 0; iz < nz; iz++) {
-        for (let iy = 0; iy < PS; iy++) {
-          for (let ix = 0; ix < PS; ix++) {
-            if (count >= MAX_INSTANCES) break;
-
+      for (let iz = 0; iz < nz && count < MAX_INSTANCES; iz++) {
+        for (let iy = 0; iy < PS && count < MAX_INSTANCES; iy++) {
+          for (let ix = 0; ix < PS && count < MAX_INSTANCES; ix++) {
             this.dummy.position.set(
               ox + (ix + 0.5) * subSx,
               oy + (iy + 0.5) * subSy,
