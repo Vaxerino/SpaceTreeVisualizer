@@ -28,8 +28,8 @@ New union type covering all supported colormaps:
 
 ```ts
 export type ColormapName =
-  'turbo' | 'viridis' | 'plasma' | 'magma' |
-  'inferno' | 'coolwarm' | 'rdbu' | 'grayscale';
+  'turbo'   | 'viridis' | 'plasma' | 'magma' |
+  'inferno' | 'rdbu'    | 'grayscale';
 ```
 
 ### `ColorMode`
@@ -61,33 +61,12 @@ Default: `{ level: 4, levelCumulative: true, showLocal: true, showRemote: true }
 
 Pure module with no mutable state. Builds a 256-entry `number[]` LUT for each colormap at module load time by calling d3-scale-chromatic interpolators. All entries use the same `buildLUT` pattern — no special cases at runtime.
 
-### Coolwarm note
-
-`d3-scale-chromatic` does not export an `interpolateCoolwarm` function. The coolwarm colormap (blue→grey→red) is defined locally using the existing 9-stop data from `ColorMapper.ts` as a helper interpolator, then fed into `buildLUT` like every other entry. `interpolateCool` from d3 must NOT be used — it is a sequential blue-to-cyan ramp, not a diverging coolwarm.
-
 ```ts
 import {
   interpolateTurbo, interpolateViridis, interpolatePlasma,
   interpolateMagma, interpolateInferno, interpolateGreys,
   interpolateRdBu,
 } from 'd3-scale-chromatic';
-
-// Local coolwarm interpolator (blue→grey→red), 9-stop, matching existing ColorMapper data
-const COOLWARM_STOPS: number[] = [
-  0x3b4cc0, 0x6788ee, 0x9abbff, 0xc9d8ef,
-  0xdddddd, 0xf5c4ad, 0xf7a889, 0xe8735a, 0xce2826,
-];
-function interpolateCoolwarm(t: number): string {
-  t = Math.max(0, Math.min(1, t));
-  const idx = t * (COOLWARM_STOPS.length - 1);
-  const lo = Math.floor(idx);
-  const hi = Math.min(lo + 1, COOLWARM_STOPS.length - 1);
-  const a = COOLWARM_STOPS[lo]!, b = COOLWARM_STOPS[hi]!, f = idx - lo;
-  const r = Math.round(((a >> 16) & 0xff) + (((b >> 16) & 0xff) - ((a >> 16) & 0xff)) * f);
-  const g = Math.round(((a >>  8) & 0xff) + (((b >>  8) & 0xff) - ((a >>  8) & 0xff)) * f);
-  const bv= Math.round(( a        & 0xff) + (( b        & 0xff) - ( a        & 0xff)) * f);
-  return `rgb(${r},${g},${bv})`;
-}
 
 function buildLUT(fn: (t: number) => string): number[] {
   // Calls fn(i/255) for i in 0..255, parses "rgb(r,g,b)" → 0xRRGGBB
@@ -99,7 +78,6 @@ const LUTS: Record<ColormapName, number[]> = {
   plasma:    buildLUT(interpolatePlasma),
   magma:     buildLUT(interpolateMagma),
   inferno:   buildLUT(interpolateInferno),
-  coolwarm:  buildLUT(interpolateCoolwarm),
   rdbu:      buildLUT(interpolateRdBu),
   grayscale: buildLUT(interpolateGreys),
 };
@@ -110,11 +88,11 @@ export function sample(name: ColormapName, t: number): number {
 }
 
 export const COLORMAP_NAMES: ColormapName[] =
-  ['turbo', 'viridis', 'plasma', 'magma', 'inferno', 'coolwarm', 'rdbu', 'grayscale'];
+  ['turbo', 'viridis', 'plasma', 'magma', 'inferno', 'rdbu', 'grayscale'];
 
 export const COLORMAP_LABELS: Record<ColormapName, string> = {
   turbo: 'Turbo', viridis: 'Viridis', plasma: 'Plasma', magma: 'Magma',
-  inferno: 'Inferno', coolwarm: 'Coolwarm', rdbu: 'RdBu', grayscale: 'Grayscale',
+  inferno: 'Inferno', rdbu: 'RdBu', grayscale: 'Grayscale',
 };
 ```
 
@@ -210,7 +188,7 @@ private passesFilter(c: CellRecord, f: FilterSpec): boolean {
 
 ### Fields to add
 
-- `selectedColormap: ColormapName = 'turbo'`
+- `colormap: ColormapName = 'turbo'`
 
 ### Updated default filter
 
@@ -232,7 +210,7 @@ Gains a `'treeId'` option: `<option value="treeId">SpaceTree ID</option>`.
 
 ### Colormap selector
 
-New `<select>` rendered directly below the color mode selector, populated from `COLORMAP_NAMES`/`COLORMAP_LABELS`. Hidden (`style.display = 'none'`) when `colorMode === 'treeId'`. On change: `AppState.setState({ selectedColormap })` → `onFilterChange()`.
+New `<select>` rendered directly below the color mode selector, populated from `COLORMAP_NAMES`/`COLORMAP_LABELS`. Hidden (`style.display = 'none'`) when `colorMode === 'treeId'`. On change: `AppState.setState({ colormap })` → `onFilterChange()`.
 
 ### Level filter — full replacement
 
@@ -333,7 +311,7 @@ Add to `index.html` styles:
 
 - Wrap canvas in `#canvas-wrap` as described above.
 - Instantiate `ColorbarOverlay`, passing `document.getElementById('canvas-wrap')`.
-- Pass `AppState.selectedColormap` and `maxLevel` to `cellRenderer.updateFromSnapshot()`.
+- Pass `AppState.colormap` and `maxLevel` to `cellRenderer.updateFromSnapshot()`.
 - `maxLevel` is computed from `currentSnapshot.cells` with an empty-array guard:
   `const maxLevel = cells.length > 0 ? Math.max(...cells.map(c => c.level)) : 0;`
   (Using `Math.max(0, ...emptyArray)` returns `-Infinity` in JavaScript — the explicit guard is required.)
@@ -343,10 +321,10 @@ Add to `index.html` styles:
 function updateColorbar(cells: CellRecord[], mode: ColorMode): void {
   if (mode === 'level') {
     const maxLevel = cells.length > 0 ? Math.max(...cells.map(c => c.level)) : 1;
-    colorbar.update(AppState.selectedColormap, 0, maxLevel, 'level');
+    colorbar.update(AppState.colormap, 0, maxLevel, 'level');
   } else if (mode === 'sim') {
     const [min, max] = cellRenderer.lastSimRange;
-    colorbar.update(AppState.selectedColormap, min, max, `field[${AppState.simFieldIndex}]`);
+    colorbar.update(AppState.colormap, min, max, `field[${AppState.simFieldIndex}]`);
   } else {
     colorbar.hide();
   }
