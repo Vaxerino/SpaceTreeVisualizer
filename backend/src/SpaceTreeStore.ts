@@ -218,7 +218,7 @@ export class SpaceTreeStore {
   onPauseAck(treeKey: string): void {
     this.pausedTrees.add(treeKey);
     console.log(`[store] ${treeKey} paused (${this.pausedTrees.size}/${this.registeredTrees.size} trees paused)`);
-    if (this.pausedTrees.size === this.pauseModeTrees.size && this.autoAdvanceSim) {
+    if (this.pauseModeTrees.size > 0 && this.pausedTrees.size === this.pauseModeTrees.size && this.autoAdvanceSim) {
       this.sendContinueToAllPaused();
     }
   }
