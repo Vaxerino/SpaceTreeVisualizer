@@ -10,6 +10,7 @@
 *.pyc
 __pycache__
 node_modules/
+test-results/
 dist/
 backend/dist/
 frontend/dist/

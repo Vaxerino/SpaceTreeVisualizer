@@ -142,13 +142,13 @@ export class TimelineBar {
     // LIVE button
     this.liveBtn.classList.toggle('live-active', state.viewMode === 'live');
 
-    // Sim group — always visible; button disabled when no PAUSE_MODE sim connected
-    this.simGroup.style.display = 'flex';
+    // Sim group only applies when at least one PAUSE_MODE simulation is connected.
+    this.simGroup.style.display = state.hasPauseMode ? 'flex' : 'none';
     this.simControlBtn.disabled = !state.hasPauseMode;
     if (!state.hasPauseMode) {
       this.simControlBtn.textContent = '⏸ Pause Sim';
       this.simControlBtn.dataset['action'] = 'pause';
-      this.simControlBtn.style.display = 'inline-block';
+      this.simControlBtn.style.display = 'none';
     } else if (state.autoAdvanceSim) {
       this.simControlBtn.textContent = '⏸ Pause Sim';
       this.simControlBtn.dataset['action'] = 'pause';

@@ -164,9 +164,12 @@ test('timeline bar renders with LIVE button active', async ({ page }) => {
 });
 
 test('timeline controls are disabled when no summaries are loaded', async ({ page }) => {
+  await page.route(`${BACKEND}/api/snapshots`, route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+  );
   await page.goto('/');
 
-  // With no WS connection there are no summaries — controls should be disabled
+  // With an empty summaries response, controls should be disabled deterministically.
   await expect(page.locator('#prevBtn')).toBeDisabled();
   await expect(page.locator('#playPauseBtn')).toBeDisabled();
   await expect(page.locator('#nextBtn')).toBeDisabled();
