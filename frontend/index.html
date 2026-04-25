@@ -21,7 +21,7 @@
         --mono:      'JetBrains Mono', 'Fira Code', monospace;
         --panel-w:   240px;
         --detail-w:  260px;
-        --bottom-h:  36px;
+        --bottom-h:  52px;
       }
 
       body {
@@ -79,8 +79,11 @@
       }
 
       /* ---- Bottom bar ---- */
-      .timeline-bar {
+      #bottom-bar {
         grid-area: bottom;
+      }
+
+      .timeline-bar {
         background: var(--panel-bg);
         border-top: 1px solid var(--border);
         display: flex;
@@ -199,6 +202,52 @@
         cursor: pointer;
       }
       .btn:hover { background: #333; border-color: var(--accent); }
+      .btn:disabled { color: var(--muted) !important; border-color: var(--border) !important; cursor: not-allowed; }
+
+      /* ---- Timeline groups ---- */
+      .timeline-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .sim-group {
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      .timeline-divider {
+        color: var(--border);
+        font-size: 18px;
+        line-height: 1;
+      }
+
+      .timeline-group input[type="range"] {
+        flex: 1;
+        min-width: 80px;
+        accent-color: var(--accent);
+      }
+
+      .icon-btn {
+        padding: 2px 6px !important;
+        font-size: 11px !important;
+        min-width: 24px;
+      }
+
+      .live-btn {
+        font-size: 10px !important;
+        letter-spacing: 0.05em;
+        color: var(--muted) !important;
+        border-color: var(--muted) !important;
+      }
+
+      .live-btn.live-active {
+        color: #44cc66 !important;
+        border-color: #44cc66 !important;
+      }
     </style>
   </head>
   <body>

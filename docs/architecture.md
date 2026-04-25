@@ -141,16 +141,20 @@ SpaceTreeVisualizer/
 │   │   ├── WebSocketServer.ts   ← browser WebSocket handler
 │   │   ├── SpaceTreeStore.ts    ← in-memory step ring buffer
 │   │   ├── RestApiRouter.ts     ← Express REST routes
-│   │   ├── types.ts             ← TypeScript interfaces
+│   │   ├── domain.ts            ← backend parser/store models
+│   │   ├── snapshotSerializer.ts← backend model → browser DTO conversion
 │   │   └── frameTypes.ts        ← protocol constants + bitmasks
 │   ├── test_sender.py           ← integration test / C++ simulator
 │   ├── package.json
 │   └── tsconfig.json
 │
+├── packages/
+│   └── contracts/               ← shared browser REST/WS DTOs + CellMarker flags
+│
 └── frontend/
     ├── src/
     │   ├── main.ts              ← entry point, wires everything together
-    │   ├── types.ts             ← shared interfaces (mirrors backend/types.ts)
+    │   ├── viewTypes.ts         ← frontend render/UI-local types
     │   ├── WebSocketClient.ts   ← auto-reconnecting WS
     │   ├── scene/
     │   │   ├── SceneManager.ts       ← renderer, camera, OrbitControls

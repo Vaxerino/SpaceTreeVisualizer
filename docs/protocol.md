@@ -2,7 +2,8 @@
 
 Version: 2
 Encoding: little-endian throughout (unless noted)
-Source of truth: `backend/src/frameTypes.ts`, `spacetree_visualizer/_templates/STVConnection.cpp.jinja2`
+TCP source of truth: `backend/src/frameTypes.ts`, `spacetree_visualizer/_templates/STVConnection.cpp.jinja2`
+Browser REST/WS DTO source of truth: `packages/contracts/src/index.ts`
 
 ---
 

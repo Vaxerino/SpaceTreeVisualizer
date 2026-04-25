@@ -1,0 +1,15 @@
+{
+  "name": "spacetreevisualizer-workspace",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "packages/contracts"
+  ],
+  "scripts": {
+    "build:contracts": "npm run build --workspace @spacetreevisualizer/contracts",
+    "build": "npm run build:contracts && npm run build --workspace spacetreevisualizer-backend && npm run build --workspace frontend",
+    "test:unit": "npm run test:unit --workspace frontend",
+    "test:e2e": "npm run test:e2e --workspace frontend"
+  }
+}

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import type { SimMeta, StepSnapshot } from '../../src/types';
+import type { SimMeta } from '@spacetreevisualizer/contracts';
+import type { StepSnapshot } from '../../src/viewTypes';
 
 test('loads the app shell', async ({ page }) => {
   await page.goto('/');
@@ -49,6 +50,7 @@ const fakeSnapshot: StepSnapshot = {
   timestamp: 0,
   cellCount: 3,
   treeIds: ['0:0'],
+  simFieldIndex: 0,
   cells: [
     { cx: 0.25, cy: 0.25, cz: 0.25, hx: 0.5, hy: 0.5, hz: 0.5, level: 1, flags: 0b0000_0100, relPosX: 0, relPosY: 0, relPosZ: 0, rank: 0, treeId: 0, simData: makePatchSimData(1.0) },
     { cx: 0.75, cy: 0.25, cz: 0.25, hx: 0.5, hy: 0.5, hz: 0.5, level: 1, flags: 0b0000_0100, relPosX: 1, relPosY: 0, relPosZ: 0, rank: 0, treeId: 0, simData: makePatchSimData(2.0) },
@@ -60,9 +62,14 @@ const fakeSnapshot: StepSnapshot = {
 
 const BACKEND = 'http://localhost:7422';
 
+const fakeSummaries = [{ stepIndex: 0, timestamp: 0, cellCount: 3 }];
+
 async function mockApis(page: import('@playwright/test').Page): Promise<void> {
   await page.route(`${BACKEND}/api/meta`, route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fakeMeta) }),
+  );
+  await page.route(`${BACKEND}/api/snapshots`, route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fakeSummaries) }),
   );
   for (const path of ['latest', '-1', '0']) {
     await page.route(`${BACKEND}/api/snapshots/${path}`, route =>
@@ -132,4 +139,42 @@ test('sim field mode expands AMR cells into subcell instances', async ({ page })
   // Structural check: the simFieldRow and select are present
   await expect(page.locator('#simFieldRow')).toBeVisible();
   await expect(page.locator('#simFieldSelect')).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// Timeline bar tests
+// ---------------------------------------------------------------------------
+
+test('timeline bar renders with LIVE button active', async ({ page }) => {
+  await page.goto('/');
+
+  // Timeline bar is visible
+  await expect(page.locator('.timeline-bar')).toBeVisible();
+
+  // LIVE button exists and has live-active class (initial state)
+  const liveBtn = page.locator('#liveBtn');
+  await expect(liveBtn).toBeVisible();
+  await expect(liveBtn).toHaveClass(/live-active/);
+
+  // Playback controls exist
+  await expect(page.locator('#prevBtn')).toBeVisible();
+  await expect(page.locator('#playPauseBtn')).toBeVisible();
+  await expect(page.locator('#nextBtn')).toBeVisible();
+  await expect(page.locator('#stepSlider')).toBeVisible();
+});
+
+test('timeline controls are disabled when no summaries are loaded', async ({ page }) => {
+  await page.route(`${BACKEND}/api/snapshots`, route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+  );
+  await page.goto('/');
+
+  // With an empty summaries response, controls should be disabled deterministically.
+  await expect(page.locator('#prevBtn')).toBeDisabled();
+  await expect(page.locator('#playPauseBtn')).toBeDisabled();
+  await expect(page.locator('#nextBtn')).toBeDisabled();
+  await expect(page.locator('#stepSlider')).toBeDisabled();
+
+  // Step info shows "—"
+  await expect(page.locator('#stepInfo')).toHaveText('—');
 });

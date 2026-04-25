@@ -1,4 +1,5 @@
-import type { CellRecord, StepSnapshot, SnapshotSummary, SimMeta } from './types';
+import type { SnapshotSummary, SimMeta } from '@spacetreevisualizer/contracts';
+import type { CellRecord, StepSnapshot } from './domain';
 
 export type StepCommittedCallback = (snapshot: StepSnapshot) => void;
 export type StoreResetCallback = () => void;
@@ -49,6 +50,8 @@ export class SpaceTreeStore {
 
   /** Trees that have sent PAUSE_ACK for the current step. */
   private pausedTrees: Set<string> = new Set();
+  private pauseModeTrees: Set<string> = new Set();
+  private autoAdvanceSim: boolean = false;
 
   private onCommitCallbacks: StepCommittedCallback[] = [];
   private onResetCallbacks: StoreResetCallback[] = [];
@@ -62,8 +65,9 @@ export class SpaceTreeStore {
   }
 
   /** Register a tree at TCP handshake time (before any STEP_BEGIN). */
-  registerTree(key: string): void {
+  registerTree(key: string, pauseMode = false): void {
     this.registeredTrees.add(key);
+    if (pauseMode) this.pauseModeTrees.add(key);
     // NOTE: if a new-run tree connects before resetForNewRun fires (a race window
     // exists when continueSenders is non-empty between the old run ending and the
     // new run detection), it will be added to expectedTrees and may block commits
@@ -78,6 +82,7 @@ export class SpaceTreeStore {
     const removedRegistered = this.registeredTrees.delete(key);
     const removedExpected = this.expectedTrees?.delete(key) ?? false;
     this.pausedTrees.delete(key);
+    this.pauseModeTrees.delete(key);
     if (!removedRegistered && !removedExpected) return;
 
     for (const [stepIndex, stepMap] of this.pending.entries()) {
@@ -157,6 +162,8 @@ export class SpaceTreeStore {
     this.nextCommitStep = null;
     this.committedSteps.clear();
     this.pausedTrees.clear();
+    this.pauseModeTrees.clear();
+    this.autoAdvanceSim = false;
     this.registeredTrees.clear();
     this.expectedTrees = null;
     this.simMeta = null;
@@ -212,6 +219,9 @@ export class SpaceTreeStore {
   onPauseAck(treeKey: string): void {
     this.pausedTrees.add(treeKey);
     console.log(`[store] ${treeKey} paused (${this.pausedTrees.size}/${this.registeredTrees.size} trees paused)`);
+    if (this.pauseModeTrees.size > 0 && this.pausedTrees.size === this.pauseModeTrees.size && this.autoAdvanceSim) {
+      this.sendContinueToAllPaused();
+    }
   }
 
   sendContinueToAllPaused(): void {
@@ -224,6 +234,18 @@ export class SpaceTreeStore {
 
   isPaused(): boolean {
     return this.pausedTrees.size > 0;
+  }
+
+  setAutoAdvanceSim(v: boolean): void {
+    this.autoAdvanceSim = v;
+  }
+
+  isAutoAdvancing(): boolean {
+    return this.autoAdvanceSim;
+  }
+
+  hasPauseModeTrees(): boolean {
+    return this.pauseModeTrees.size > 0;
   }
 
   private flushReadySteps(): void {

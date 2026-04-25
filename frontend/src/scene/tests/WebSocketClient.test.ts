@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WebSocketClient } from '../../WebSocketClient';
-import type { StepSnapshot } from '../../types';
+import type { StepSnapshot } from '../../viewTypes';
 
 // SIM_DATA_FRAME_MAGIC = 0x53545631 ("STV1")
 const SIM_DATA_FRAME_MAGIC = 0x53545631;

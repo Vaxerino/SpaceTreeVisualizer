@@ -1,10 +1,10 @@
-import type { CellRecord } from '../types';
+import type { CellRecord } from '../viewTypes';
 import {
   CELL_FLAG_HAS_BEEN_REFINED, CELL_FLAG_WILL_BE_REFINED,
   CELL_FLAG_IS_LOCAL, CELL_FLAG_IS_PARENT_LOCAL,
   CELL_FLAG_WILL_BE_ENCLAVE, CELL_FLAG_HAS_BEEN_ENCLAVE,
   CELL_FLAG_INSIDE_DOMAIN,
-} from '../types';
+} from '@spacetreevisualizer/contracts';
 
 /**
  * Right panel: shows decoded fields of the selected CellRecord.

@@ -7,7 +7,7 @@ import {
   interpolateGreys,
   interpolateRdBu,
 } from 'd3-scale-chromatic';
-import type { ColormapName } from '../types';
+import type { ColormapName } from '../viewTypes';
 
 /**
  * Parse a d3 color string → 0xRRGGBB integer.

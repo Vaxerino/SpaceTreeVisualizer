@@ -60,13 +60,15 @@ export function cellRecordGeomSize(dims: number): number {
 }
 
 // --- CellMarker flag bitmasks (from CellMarker.h) ---
-// These are the bit positions in the uint16 flags field of CellRecord.
-export const CELL_FLAG_HAS_BEEN_REFINED  = 1 << 0;
-export const CELL_FLAG_WILL_BE_REFINED   = 1 << 1;
-export const CELL_FLAG_IS_LOCAL          = 1 << 2;
-export const CELL_FLAG_IS_PARENT_LOCAL   = 1 << 3;
-export const CELL_FLAG_ALL_VTXS_REFINED  = 1 << 4;
-export const CELL_FLAG_ONE_VTX_HANGING   = 1 << 5;
-export const CELL_FLAG_INSIDE_DOMAIN     = 1 << 6;
-export const CELL_FLAG_WILL_BE_ENCLAVE   = 1 << 9;
-export const CELL_FLAG_HAS_BEEN_ENCLAVE  = 1 << 10;
+// Browser-facing flag constants are owned by @spacetreevisualizer/contracts.
+export {
+  CELL_FLAG_HAS_BEEN_REFINED,
+  CELL_FLAG_WILL_BE_REFINED,
+  CELL_FLAG_IS_LOCAL,
+  CELL_FLAG_IS_PARENT_LOCAL,
+  CELL_FLAG_ALL_VTXS_REFINED,
+  CELL_FLAG_ONE_VTX_HANGING,
+  CELL_FLAG_INSIDE_DOMAIN,
+  CELL_FLAG_WILL_BE_ENCLAVE,
+  CELL_FLAG_HAS_BEEN_ENCLAVE,
+} from '@spacetreevisualizer/contracts';

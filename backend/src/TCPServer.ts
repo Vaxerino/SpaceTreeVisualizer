@@ -9,7 +9,7 @@ import {
   HANDSHAKE_FLAG_CELL_DATA, HANDSHAKE_FLAG_FACE_DATA,
   FrameType,
 } from './frameTypes';
-import type { TreeConnection } from './types';
+import type { TreeConnection } from './domain';
 import { ProtocolParser } from './ProtocolParser';
 import type { SpaceTreeStore } from './SpaceTreeStore';
 
@@ -102,7 +102,7 @@ export class TCPServer {
         `patchSize=${patchSize}, nUnknowns=${nUnknowns}, nAux=${nAux}`);
 
       // Register tree so store knows the expected tree count before any STEP_BEGIN.
-      this.store.registerTree(conn.key);
+      this.store.registerTree(conn.key, conn.pauseMode);
 
       // Send ACK.
       socket.write(Buffer.from([ACK_BYTE]));

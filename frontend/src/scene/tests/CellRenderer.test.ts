@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import type { CellRecord, FilterSpec } from '../../types';
-import { CELL_FLAG_IS_LOCAL } from '../../types';
+import type { CellRecord, FilterSpec } from '../../viewTypes';
+import { CELL_FLAG_IS_LOCAL } from '@spacetreevisualizer/contracts';
 import { CellRenderer } from '../CellRenderer';
 
 function makeCell(overrides: Partial<CellRecord> = {}): CellRecord {

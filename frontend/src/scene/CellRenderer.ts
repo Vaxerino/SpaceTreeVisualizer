@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { CellRecord, FilterSpec, ColorMode, ColormapName, SimMeta } from '../types';
-import { CELL_FLAG_IS_LOCAL } from '../types';
+import type { CellRecord, FilterSpec, ColorMode, ColormapName, SimMeta } from '../viewTypes';
+import { CELL_FLAG_IS_LOCAL } from '@spacetreevisualizer/contracts';
 import { ColorMapper } from './ColorMapper';
 import { sample } from './ColormapRegistry';
 
