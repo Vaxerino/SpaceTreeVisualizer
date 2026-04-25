@@ -9,6 +9,11 @@
 .td-root
 *.pyc
 __pycache__
+node_modules/
+dist/
+backend/dist/
+frontend/dist/
+packages/contracts/dist/
 
 Makefile
 

@@ -72,6 +72,8 @@ project.add_action_set_to_timestepping(
 
 Key files:
 - `backend/src/frameTypes.ts` — protocol constants; must stay in sync with C++ templates
+- `backend/src/domain.ts` — backend-only parser/store models, including `TreeConnection` and internal snapshots
+- `backend/src/snapshotSerializer.ts` — converts backend snapshots into browser REST/WS DTOs
 - `backend/src/SpaceTreeStore.ts` — step ring buffer (200 steps), commit logic
 - `backend/src/ProtocolParser.ts` — stateful binary frame parser
 
@@ -84,6 +86,8 @@ Key files:
 **Type-check:** `cd frontend && npx tsc --noEmit`
 
 Key files:
+- `packages/contracts/src/index.ts` — shared browser REST/WS DTOs and CellMarker flag constants
+- `frontend/src/viewTypes.ts` — frontend-local render/UI types (`ColorMode`, `FilterSpec`, `Float32Array` sim payloads)
 - `frontend/src/scene/CellRenderer.ts` — InstancedMesh, max 500K cells, 5% gap
 - `frontend/src/scene/ColorMapper.ts` — routes color modes through ColormapRegistry LUTs; treeId uses golden-angle hue hashing
 - `frontend/src/scene/ColormapRegistry.ts` — 256-entry pre-sampled LUTs for 7 d3 colormaps (turbo, viridis, plasma, magma, inferno, rdbu, grayscale)
@@ -113,13 +117,17 @@ Key files:
 
 ### TypeScript (backend)
 - Strict mode, no `any`
-- `frameTypes.ts` is the single source of truth for protocol constants — do not inline magic numbers elsewhere
+- `frameTypes.ts` is the single source of truth for TCP protocol constants — do not inline magic numbers elsewhere
+- Browser-facing REST/WS contracts live in `packages/contracts`; backend-only parser/store state stays in `backend/src/domain.ts`
+- Public snapshot serialization goes through `backend/src/snapshotSerializer.ts`; keep REST and WebSocket DTO shapes aligned there
 - `SpaceTreeStore` owns all mutable state; `TCPServer`/`WebSocketServer` only call its methods
 - Never use `Float64Array`/TypedArray in types exposed via REST — `res.json()` serializes them as `{"0":1,...}` not `[1,...]`. Use `number[]`.
 - Never construct `Float64Array(buf, byteOffset, n)` from a TCP chunk subarray — byteOffset may not be 8-byte aligned (crash). Read doubles with `payload.readDoubleLE(offset + i*8)` in a loop.
 
 ### TypeScript (frontend)
 - No React. Plain DOM manipulation + Three.js
+- Import browser API DTOs and CellMarker flag constants from `@spacetreevisualizer/contracts`; keep render/UI-only types in `viewTypes.ts`
+- `WebSocketClient.ts` is the JSON/binary normalization boundary. Other frontend modules should consume normalized `StepSnapshot`/message types, not raw `Record<string, unknown>`.
 - `AppState` is the single reactive singleton — update via `setState()`, never mutate directly
 - `CellRenderer.updateFromSnapshot()` is the only entry point for scene updates
 - Re-filter without re-fetch when filter/color mode changes (call `updateFromSnapshot` with `currentSnapshot.cells`)

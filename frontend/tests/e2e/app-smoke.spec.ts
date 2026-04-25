@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import type { SimMeta, StepSnapshot } from '../../src/types';
+import type { SimMeta } from '@spacetreevisualizer/contracts';
+import type { StepSnapshot } from '../../src/viewTypes';
 
 test('loads the app shell', async ({ page }) => {
   await page.goto('/');

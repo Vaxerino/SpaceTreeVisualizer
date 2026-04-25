@@ -1,4 +1,4 @@
-import type { CellRecord, ColorMode, ColormapName, FilterSpec, SnapshotSummary, SimMeta } from '../types';
+import type { CellRecord, ColorMode, ColormapName, FilterSpec, SnapshotSummary, SimMeta } from '../viewTypes';
 
 type Listener = () => void;
 

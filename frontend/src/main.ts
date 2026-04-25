@@ -11,7 +11,8 @@ import { StatusIndicator } from './ui/StatusIndicator';
 import { TimelineBar } from './ui/TimelineBar';
 import type { TimelineBarState } from './ui/TimelineBar';
 import { ColorbarOverlay } from './ui/ColorbarOverlay';
-import type { CellRecord, ColorMode, StepSnapshot, SnapshotSummary, SimMeta } from './types';
+import type { StatusMessage, StepCommittedMessage } from '@spacetreevisualizer/contracts';
+import type { CellRecord, ColorMode, StepSnapshot, SnapshotSummary, SimMeta } from './viewTypes';
 
 // --- DOM structure ---
 const app = document.getElementById('app')!;
@@ -383,13 +384,13 @@ async function displaySnapshot(snap: StepSnapshot): Promise<void> {
 const ws = new WebSocketClient('ws://localhost:7422');
 
 ws.on('status', (msg) => {
-  const statusMsg = msg as Record<string, unknown>;
-  const trees = (statusMsg['trees'] as string[]) ?? [];
+  const statusMsg = msg as StatusMessage;
+  const trees = statusMsg.trees;
   controls.updateTreeList(trees);
 
-  const hasPauseMode = (statusMsg['hasPauseMode'] as boolean) ?? false;
-  const autoAdvanceSim = (statusMsg['autoAdvanceSim'] as boolean) ?? false;
-  const isPaused = (statusMsg['paused'] as boolean) ?? false;
+  const hasPauseMode = statusMsg.hasPauseMode;
+  const autoAdvanceSim = statusMsg.autoAdvanceSim;
+  const isPaused = statusMsg.paused;
 
   AppState.setState({ registeredTrees: trees, isPaused, hasPauseMode, autoAdvanceSim });
 
@@ -404,10 +405,10 @@ ws.on('status', (msg) => {
 });
 
 ws.on('step_committed', (msg) => {
-  const stepMsg = msg as Record<string, unknown>;
-  const stepIndex = stepMsg['stepIndex'] as number;
-  const timestamp = (stepMsg['timestamp'] as number) ?? 0;
-  const cellCount = (stepMsg['cellCount'] as number) ?? 0;
+  const stepMsg = msg as StepCommittedMessage;
+  const stepIndex = stepMsg.stepIndex;
+  const timestamp = stepMsg.timestamp;
+  const cellCount = stepMsg.cellCount;
 
   AppState.setState({
     totalSteps: AppState.totalSteps + 1,

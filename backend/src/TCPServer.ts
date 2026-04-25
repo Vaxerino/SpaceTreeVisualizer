@@ -9,7 +9,7 @@ import {
   HANDSHAKE_FLAG_CELL_DATA, HANDSHAKE_FLAG_FACE_DATA,
   FrameType,
 } from './frameTypes';
-import type { TreeConnection } from './types';
+import type { TreeConnection } from './domain';
 import { ProtocolParser } from './ProtocolParser';
 import type { SpaceTreeStore } from './SpaceTreeStore';
 

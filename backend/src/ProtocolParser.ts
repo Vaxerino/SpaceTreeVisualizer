@@ -7,7 +7,7 @@ import {
   FrameType,
   cellRecordGeomSize,
 } from './frameTypes';
-import type { CellRecord, TreeConnection } from './types';
+import type { CellRecord, TreeConnection } from './domain';
 import type { SpaceTreeStore } from './SpaceTreeStore';
 
 /**

@@ -22,7 +22,7 @@ No C++ template changes. No new REST endpoints (existing `GET /api/snapshots` is
 ## Types
 
 ```ts
-// Already defined in backend/src/types.ts and frontend/src/types.ts
+// Defined in packages/contracts/src/index.ts
 interface SnapshotSummary {
   stepIndex: number;   // simulation step index; non-contiguous after ring-buffer eviction
   timestamp: number;   // simulation time in seconds (float64)

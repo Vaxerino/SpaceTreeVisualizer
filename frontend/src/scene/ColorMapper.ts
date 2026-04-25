@@ -1,9 +1,9 @@
-import type { CellRecord, ColorMode, ColormapName, SimMeta } from '../types';
+import type { CellRecord, ColorMode, ColormapName, SimMeta } from '../viewTypes';
 import {
   CELL_FLAG_IS_LOCAL,
   CELL_FLAG_HAS_BEEN_ENCLAVE, CELL_FLAG_WILL_BE_ENCLAVE,
   CELL_FLAG_HAS_BEEN_REFINED, CELL_FLAG_WILL_BE_REFINED,
-} from '../types';
+} from '@spacetreevisualizer/contracts';
 import { sample } from './ColormapRegistry';
 import * as THREE from 'three';
 

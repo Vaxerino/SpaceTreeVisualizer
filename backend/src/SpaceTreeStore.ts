@@ -1,4 +1,5 @@
-import type { CellRecord, StepSnapshot, SnapshotSummary, SimMeta } from './types';
+import type { SnapshotSummary, SimMeta } from '@spacetreevisualizer/contracts';
+import type { CellRecord, StepSnapshot } from './domain';
 
 export type StepCommittedCallback = (snapshot: StepSnapshot) => void;
 export type StoreResetCallback = () => void;

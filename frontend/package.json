@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "npm run build --workspace @spacetreevisualizer/contracts",
+    "prebuild": "npm run build --workspace @spacetreevisualizer/contracts",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -22,6 +24,7 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@spacetreevisualizer/contracts": "file:../packages/contracts",
     "@types/three": "^0.183.1",
     "d3-scale-chromatic": "^3.1.0",
     "three": "^0.183.2"

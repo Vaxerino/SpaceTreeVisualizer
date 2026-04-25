@@ -1,4 +1,4 @@
-import type { StepSnapshot } from '../types';
+import type { StepSnapshot } from '../viewTypes';
 
 export const BACKEND = 'http://localhost:7422';
 const MAX_CACHED = 50;

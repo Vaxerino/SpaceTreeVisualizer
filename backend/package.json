@@ -4,12 +4,16 @@
   "description": "SpaceTreeVisualizer backend: receives Peano4 tree data, serves browser",
   "main": "dist/server.js",
   "scripts": {
+    "prebuild": "npm run build --workspace @spacetreevisualizer/contracts",
+    "predev": "npm run build --workspace @spacetreevisualizer/contracts",
+    "prewatch": "npm run build --workspace @spacetreevisualizer/contracts",
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "ts-node src/server.ts",
     "watch": "ts-node-dev --respawn src/server.ts"
   },
   "dependencies": {
+    "@spacetreevisualizer/contracts": "file:../packages/contracts",
     "express": "^4.18.2",
     "ws": "^8.16.0"
   },

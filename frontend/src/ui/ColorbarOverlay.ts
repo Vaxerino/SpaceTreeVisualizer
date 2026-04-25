@@ -1,4 +1,4 @@
-import type { ColormapName } from '../types';
+import type { ColormapName } from '../viewTypes';
 import { sample } from '../scene/ColormapRegistry';
 
 const BAR_WIDTH = 200;

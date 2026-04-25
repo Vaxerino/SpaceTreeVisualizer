@@ -1,6 +1,7 @@
-import type { CellRecord, StepSnapshot } from './types';
+import type { ClientMessage, ServerMessage } from '@spacetreevisualizer/contracts';
+import type { CellRecord, StepSnapshot } from './viewTypes';
 
-type MessageHandler = (msg: Record<string, unknown> | StepSnapshot) => void;
+type MessageHandler = (msg: ServerMessage | StepSnapshot | Record<string, never>) => void;
 
 const SIM_DATA_FRAME_MAGIC = 0x53545631; // "STV1"
 
@@ -29,7 +30,7 @@ export class WebSocketClient {
     this.handlers.set(type, [...existing, handler]);
   }
 
-  send(msg: Record<string, unknown>): void {
+  send(msg: ClientMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
@@ -87,7 +88,7 @@ export class WebSocketClient {
         this.pendingSnapshots.clear();
       }
 
-      this.emit(msg['type'] as string, msg);
+      this.emit(msg['type'] as string, msg as unknown as ServerMessage);
     } catch (e) {
       console.warn('[ws] failed to parse message', e);
     }
@@ -144,7 +145,7 @@ export class WebSocketClient {
     this.emit('snapshot_data', pending.snapshot);
   }
 
-  private emit(type: string, msg: Record<string, unknown> | StepSnapshot): void {
+  private emit(type: string, msg: ServerMessage | StepSnapshot | Record<string, never>): void {
     const handlers = this.handlers.get(type) ?? [];
     for (const h of handlers) h(msg);
   }
@@ -176,7 +177,7 @@ function normalizeSnapshot(msg: Record<string, unknown>): StepSnapshot {
     treeIds: ((msg['treeIds'] as string[]) ?? []).slice(),
     simFieldIndex: typeof msg['simFieldIndex'] === 'number' ? Number(msg['simFieldIndex']) : null,
     cells,
-    faces: ((msg['faces'] as unknown[]) ?? []).slice(),
-    vertices: ((msg['vertices'] as unknown[]) ?? []).slice(),
+    faces: ((msg['faces'] as StepSnapshot['faces']) ?? []).slice(),
+    vertices: ((msg['vertices'] as StepSnapshot['vertices']) ?? []).slice(),
   };
 }

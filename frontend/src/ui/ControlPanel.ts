@@ -1,5 +1,5 @@
 import { AppState } from '../store/AppState';
-import type { ColorMode, ColormapName, SimMeta } from '../types';
+import type { ColorMode, ColormapName, SimMeta } from '../viewTypes';
 import { COLORMAP_NAMES, COLORMAP_LABELS } from '../scene/ColormapRegistry';
 
 /**

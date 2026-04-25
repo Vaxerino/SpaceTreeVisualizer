@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CellRecord } from '../../types';
+import type { CellRecord } from '../../viewTypes';
 import { ColorMapper } from '../ColorMapper';
 import { sample } from '../ColormapRegistry';
 
